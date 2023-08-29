@@ -12,7 +12,13 @@ import warnings
 
 class MOMgrid:
     def __init__(
-        self, source, topog=None, symmetric=True, verbose=False, hgrid_dtype="float32"
+        self,
+        source,
+        topog=None,
+        symmetric=True,
+        verbose=False,
+        hgrid_dtype="float32",
+        max_depth=6500.0,
     ):
         """Ocean Model grid object
 
@@ -36,6 +42,8 @@ class MOMgrid:
             `ocean_hgrid.nc`. The supergrid is natively double precision
             while the ocean static files are single precision,
             by default "float32"
+        max_depth : float, optional
+            by default 6500.
         """
 
         # Define names in static file for future flexibility
@@ -44,6 +52,7 @@ class MOMgrid:
         areacello = "areacello"
         dxt = "dxt"
         dyt = "dyt"
+        deptho = "deptho"
 
         # Define names in supergrid file for future flexibility
         xvar = "x"
@@ -51,6 +60,7 @@ class MOMgrid:
         areavar = "area"
         dxvar = "dx"
         dyvar = "dy"
+        depth = "depth"
 
         # Load source file
         # TODO: add support for a gridspec tar bundle
@@ -139,6 +149,7 @@ class MOMgrid:
             setattr(self, areacello, ds[areacello].values)
             setattr(self, dxt, ds[dxt].values)
             setattr(self, dyt, ds[dyt].values)
+            setattr(self, deptho, ds[deptho].values)
 
         elif self.is_hgrid:
             setattr(self, geolon, x[1::2, 1::2].astype(hgrid_dtype))
@@ -155,6 +166,12 @@ class MOMgrid:
                 + _area[1::2, ::2]
             )
             setattr(self, areacello, _area.astype(hgrid_dtype))
+
+            if topog is not None:
+                _depth = topog[depth].values
+                _depth = np.where(_depth > max_depth, max_depth, _depth)
+                _depth = np.where(_depth > 0, _depth, np.nan)
+                setattr(self, deptho, _depth)
 
         # Fetch u-cell grid metrics
         suffix = "_u"
@@ -277,13 +294,14 @@ class MOMgrid:
         areacello = "areacello"
         dxt = "dxt"
         dyt = "dyt"
+        deptho = "deptho"
 
-        cell_types = [
-            ("", (ycenter, xcenter)),
-            ("_u", (ycenter, xcorner)),
-            ("_v", (ycorner, xcenter)),
-            ("_c", (ycorner, xcorner)),
-        ]
+        tcell = ("", (ycenter, xcenter))
+        ucell = ("_u", (ycenter, xcorner))
+        vcell = ("_v", (ycorner, xcenter))
+        ccell = ("_c", (ycorner, xcorner))
+
+        cell_types = [tcell, ucell, vcell, ccell]
 
         ds = xr.Dataset()
 
@@ -303,5 +321,8 @@ class MOMgrid:
             # ds[dyt+cell_type[0]] = xr.DataArray(getattr(self,dyt+cell_type[0]), dims=cell_type[1])
 
         # TODO: Add variable attributes -- long_name, standard_name, units, etc.
+
+        if self.deptho is not None:
+            ds[deptho] = xr.DataArray(getattr(self, deptho), dims=tcell[1])
 
         return ds
