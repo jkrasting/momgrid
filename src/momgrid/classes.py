@@ -173,9 +173,17 @@ class MOMgrid:
                 _depth = topog[depth].values
                 _depth = np.where(_depth > max_depth, max_depth, _depth)
                 _depth = np.where(_depth > 0, _depth, np.nan)
+                _wet = np.where(np.isnan(_depth), 0.0, 1.0)
 
-                setattr(self, deptho, _depth)
-                setattr(self, wet, np.where(np.isnan(_depth), 0.0, 1.0))
+                setattr(self, deptho, _depth.astype(hgrid_dtype))
+                setattr(self, wet, _wet.astype(hgrid_dtype))
+
+                # reflect top row about the center
+                _wet_padded = np.concatenate((_wet, _wet[-1, :][::-1][None, :]), axis=0)
+
+                _wet_padded = np.concatenate(
+                    (_wet_padded, _wet_padded[:, 0][:, None]), axis=1
+                )
 
         # Fetch u-cell grid metrics
         suffix = "_u"
@@ -185,6 +193,7 @@ class MOMgrid:
             setattr(self, areacello + suffix, ds[areacello + "_cu"].values)
             setattr(self, "dxCu", ds["dxCu"].values)
             setattr(self, "dyCu", ds["dyCu"].values)
+            setattr(self, wet + suffix, ds[wet + suffix].values)
 
         elif self.is_hgrid:
             _geolon = x[1::2, ::2]
@@ -217,6 +226,10 @@ class MOMgrid:
             _area = _area if self.symmetric else _area[:, 1:]
             setattr(self, areacello + suffix, _area.astype(hgrid_dtype))
 
+            _wet = np.minimum(np.roll(_wet_padded, 1, axis=1), _wet_padded)
+            _wet = _wet if not self.symmetric else _wet[0:-1, :]
+            setattr(self, wet + suffix, _wet.astype(hgrid_dtype))
+
         # Fetch v-cell grid metrics
         suffix = "_v"
         if self.is_static:
@@ -225,6 +238,7 @@ class MOMgrid:
             setattr(self, areacello + suffix, ds[areacello + "_cv"].values)
             setattr(self, "dxCv", ds["dxCv"].values)
             setattr(self, "dyCv", ds["dyCv"].values)
+            setattr(self, wet + suffix, ds[wet + suffix].values)
 
         elif self.is_hgrid:
             _geolon = x[::2, 1::2]
@@ -256,12 +270,17 @@ class MOMgrid:
             _area = _area if self.symmetric else _area[1:, :]
             setattr(self, areacello + suffix, _area.astype(hgrid_dtype))
 
+            _wet = np.minimum(np.roll(_wet_padded, 1, axis=0), _wet_padded)
+            _wet = _wet if not self.symmetric else _wet[:, 0:-1]
+            setattr(self, wet + suffix, _wet.astype(hgrid_dtype))
+
         # Fetch corner cell grid metrics
         suffix = "_c"
         if self.is_static:
             setattr(self, geolon + suffix, ds[geolon + suffix].values)
             setattr(self, geolat + suffix, ds[geolat + suffix].values)
             setattr(self, areacello + suffix, ds[areacello + "_bu"].values)
+            # TODO: setattr(self, wet + suffix, ds[wet + suffix].values)
             # note: dx and dy are not defined in ocean_static.nc files
 
         elif self.is_hgrid:
@@ -284,6 +303,8 @@ class MOMgrid:
             _area = np.append(_area[:, 0][:, None], _area, axis=1)
             _area = _area if self.symmetric else _area[1:, 1:]
             setattr(self, areacello + suffix, _area.astype(hgrid_dtype))
+
+            # TODO: add wet mask for corner cells
 
     def to_xarray(self):
         # Define dimension names for future flexibility
@@ -330,7 +351,10 @@ class MOMgrid:
         if self.deptho is not None:
             ds[deptho] = xr.DataArray(getattr(self, deptho), dims=tcell[1])
 
-        if hasattr(self, wet):
-            ds[wet] = xr.DataArray(getattr(self, wet), dims=tcell[1])
+        for cell_type in cell_types:
+            if hasattr(self, wet + cell_type[0]):
+                ds[wet + cell_type[0]] = xr.DataArray(
+                    getattr(self, wet + cell_type[0]), dims=cell_type[1]
+                )
 
         return ds
