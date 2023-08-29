@@ -11,7 +11,15 @@ import warnings
 
 
 class MOMgrid:
-    def __init__(self, source, symmetric=True, verbose=False, hgrid_dtype="float32"):
+    def __init__(
+        self,
+        source,
+        topog=None,
+        symmetric=True,
+        verbose=False,
+        hgrid_dtype="float32",
+        max_depth=6500.0,
+    ):
         """Ocean Model grid object
 
         Parameters
@@ -21,6 +29,9 @@ class MOMgrid:
             file or an ocean_static.nc file. Optionally, a known configuration
             may also be specified. Known configurations are "OM4" and
             "OM4p5"
+        topog : xarray.Dataset or str, path-like, optional
+            Xarray dataset or path to ocean topography. If present the wet masks
+            corresponding to the grids will be generated, by default None.
         symmetric : bool, optional
             Return metrics compatible with symmetric memory mode,
             by default True
@@ -31,6 +42,8 @@ class MOMgrid:
             `ocean_hgrid.nc`. The supergrid is natively double precision
             while the ocean static files are single precision,
             by default "float32"
+        max_depth : float, optional
+            by default 6500.
         """
 
         # Define names in static file for future flexibility
@@ -39,6 +52,8 @@ class MOMgrid:
         areacello = "areacello"
         dxt = "dxt"
         dyt = "dyt"
+        deptho = "deptho"
+        wet = "wet"
 
         # Define names in supergrid file for future flexibility
         xvar = "x"
@@ -46,6 +61,7 @@ class MOMgrid:
         areavar = "area"
         dxvar = "dx"
         dyvar = "dy"
+        depth = "depth"
 
         # Load source file
         # TODO: add support for a gridspec tar bundle
@@ -69,8 +85,30 @@ class MOMgrid:
                 raise ValueError(f"Unknown source: {source}")
 
         else:
-            raise ValueError("Source must be an xarray dataset, path, or known model config.")
+            raise ValueError(
+                "Source must be an xarray dataset, path, or known model config."
+            )
 
+        # Load topog file
+        # TODO: add support for a gridspec tar bundle
+        if (isinstance(topog, xr.Dataset)) or (topog is None):
+            self.topog_source = str(type(topog))
+            topog = topog
+
+        elif isinstance(topog, str):
+            abspath = os.path.abspath(topog)
+            if os.path.exists(abspath):
+                self.topog_source = abspath
+                topog = xr.open_dataset(topog)
+            else:
+                raise ValueError(f"Unknown source: {source}")
+
+        else:
+            raise ValueError(
+                "Source must be an xarray dataset, path, or known model config."
+            )
+
+        # TODO: remove this object below; only used in testing
         self.ds = ds
 
         # Store whether or not the source is a static file or an hgrid file
@@ -112,6 +150,8 @@ class MOMgrid:
             setattr(self, areacello, ds[areacello].values)
             setattr(self, dxt, ds[dxt].values)
             setattr(self, dyt, ds[dyt].values)
+            setattr(self, deptho, ds[deptho].values)
+            setattr(self, wet, ds[wet].values)
 
         elif self.is_hgrid:
             setattr(self, geolon, x[1::2, 1::2].astype(hgrid_dtype))
@@ -129,6 +169,22 @@ class MOMgrid:
             )
             setattr(self, areacello, _area.astype(hgrid_dtype))
 
+            if topog is not None:
+                _depth = topog[depth].values
+                _depth = np.where(_depth > max_depth, max_depth, _depth)
+                _depth = np.where(_depth > 0, _depth, np.nan)
+                _wet = np.where(np.isnan(_depth), 0.0, 1.0)
+
+                setattr(self, deptho, _depth.astype(hgrid_dtype))
+                setattr(self, wet, _wet.astype(hgrid_dtype))
+
+                # reflect top row about the center
+                _wet_padded = np.concatenate((_wet, _wet[-1, :][::-1][None, :]), axis=0)
+
+                _wet_padded = np.concatenate(
+                    (_wet_padded, _wet_padded[:, 0][:, None]), axis=1
+                )
+
         # Fetch u-cell grid metrics
         suffix = "_u"
         if self.is_static:
@@ -137,6 +193,7 @@ class MOMgrid:
             setattr(self, areacello + suffix, ds[areacello + "_cu"].values)
             setattr(self, "dxCu", ds["dxCu"].values)
             setattr(self, "dyCu", ds["dyCu"].values)
+            setattr(self, wet + suffix, ds[wet + suffix].values)
 
         elif self.is_hgrid:
             _geolon = x[1::2, ::2]
@@ -169,6 +226,10 @@ class MOMgrid:
             _area = _area if self.symmetric else _area[:, 1:]
             setattr(self, areacello + suffix, _area.astype(hgrid_dtype))
 
+            _wet = np.minimum(np.roll(_wet_padded, 1, axis=1), _wet_padded)
+            _wet = _wet if not self.symmetric else _wet[0:-1, :]
+            setattr(self, wet + suffix, _wet.astype(hgrid_dtype))
+
         # Fetch v-cell grid metrics
         suffix = "_v"
         if self.is_static:
@@ -177,6 +238,7 @@ class MOMgrid:
             setattr(self, areacello + suffix, ds[areacello + "_cv"].values)
             setattr(self, "dxCv", ds["dxCv"].values)
             setattr(self, "dyCv", ds["dyCv"].values)
+            setattr(self, wet + suffix, ds[wet + suffix].values)
 
         elif self.is_hgrid:
             _geolon = x[::2, 1::2]
@@ -208,12 +270,17 @@ class MOMgrid:
             _area = _area if self.symmetric else _area[1:, :]
             setattr(self, areacello + suffix, _area.astype(hgrid_dtype))
 
+            _wet = np.minimum(np.roll(_wet_padded, 1, axis=0), _wet_padded)
+            _wet = _wet if not self.symmetric else _wet[:, 0:-1]
+            setattr(self, wet + suffix, _wet.astype(hgrid_dtype))
+
         # Fetch corner cell grid metrics
         suffix = "_c"
         if self.is_static:
             setattr(self, geolon + suffix, ds[geolon + suffix].values)
             setattr(self, geolat + suffix, ds[geolat + suffix].values)
             setattr(self, areacello + suffix, ds[areacello + "_bu"].values)
+            # TODO: setattr(self, wet + suffix, ds[wet + suffix].values)
             # note: dx and dy are not defined in ocean_static.nc files
 
         elif self.is_hgrid:
@@ -237,6 +304,8 @@ class MOMgrid:
             _area = _area if self.symmetric else _area[1:, 1:]
             setattr(self, areacello + suffix, _area.astype(hgrid_dtype))
 
+            # TODO: add wet mask for corner cells
+
     def to_xarray(self):
         # Define dimension names for future flexibility
         ycenter = "yh"
@@ -250,13 +319,15 @@ class MOMgrid:
         areacello = "areacello"
         dxt = "dxt"
         dyt = "dyt"
+        deptho = "deptho"
+        wet = "wet"
 
-        cell_types = [
-            ("", (ycenter, xcenter)),
-            ("_u", (ycenter, xcorner)),
-            ("_v", (ycorner, xcenter)),
-            ("_c", (ycorner, xcorner)),
-        ]
+        tcell = ("", (ycenter, xcenter))
+        ucell = ("_u", (ycenter, xcorner))
+        vcell = ("_v", (ycorner, xcenter))
+        ccell = ("_c", (ycorner, xcorner))
+
+        cell_types = [tcell, ucell, vcell, ccell]
 
         ds = xr.Dataset()
 
@@ -276,5 +347,14 @@ class MOMgrid:
             # ds[dyt+cell_type[0]] = xr.DataArray(getattr(self,dyt+cell_type[0]), dims=cell_type[1])
 
         # TODO: Add variable attributes -- long_name, standard_name, units, etc.
+
+        if self.deptho is not None:
+            ds[deptho] = xr.DataArray(getattr(self, deptho), dims=tcell[1])
+
+        for cell_type in cell_types:
+            if hasattr(self, wet + cell_type[0]):
+                ds[wet + cell_type[0]] = xr.DataArray(
+                    getattr(self, wet + cell_type[0]), dims=cell_type[1]
+                )
 
         return ds
