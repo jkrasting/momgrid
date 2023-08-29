@@ -69,7 +69,9 @@ class MOMgrid:
                 raise ValueError(f"Unknown source: {source}")
 
         else:
-            raise ValueError("Source must be an xarray dataset, path, or known model config.")
+            raise ValueError(
+                "Source must be an xarray dataset, path, or known model config."
+            )
 
         self.ds = ds
 
