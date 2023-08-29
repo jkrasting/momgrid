@@ -16,9 +16,9 @@ class MOMgrid:
 
         Parameters
         ----------
-        source : str, path-like
-            Path to grid source, either an ocean_hgrid.nc file or an
-            ocean_static.nc file. Optionally, a known configuration
+        source : xarray.Dataset or str, path-like
+            Xarray dataset or path to grid source, either an ocean_hgrid.nc
+            file or an ocean_static.nc file. Optionally, a known configuration
             may also be specified. Known configurations are "OM4" and
             "OM4p5"
         symmetric : bool, optional
@@ -49,20 +49,27 @@ class MOMgrid:
 
         # Load source file
         # TODO: add support for a gridspec tar bundle
-        abspath = os.path.abspath(source)
-        if os.path.exists(abspath):
-            self.source = abspath
-            ds = xr.open_dataset(source)
-        elif source == "OM4":
-            self.source = "Default OM4 grid"
-            # TODO: implement known grid
-            # ds = xr.open_dataset("path_to_known_OM4_hgrid")
-        elif source == "OM4p5":
-            self.source = "Default OM4p5 grid"
-            # TODO: implement known grid
-            # ds = xr.open_dataset("path_to_known_OM4p5_hgrid")
+        if isinstance(source, xr.Dataset):
+            ds = source
+
+        elif isinstance(source, str):
+            abspath = os.path.abspath(source)
+            if os.path.exists(abspath):
+                self.source = abspath
+                ds = xr.open_dataset(source)
+            elif source == "OM4":
+                self.source = "Default OM4 grid"
+                # TODO: implement known grid
+                # ds = xr.open_dataset("path_to_known_OM4_hgrid")
+            elif source == "OM4p5":
+                self.source = "Default OM4p5 grid"
+                # TODO: implement known grid
+                # ds = xr.open_dataset("path_to_known_OM4p5_hgrid")
+            else:
+                raise ValueError(f"Unknown source: {source}")
+
         else:
-            raise ValueError(f"Unknown source: {source}")
+            raise ValueError("Source must be an xarray dataset, path, or known model config.")
 
         self.ds = ds
 
