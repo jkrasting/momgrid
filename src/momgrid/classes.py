@@ -11,7 +11,9 @@ import warnings
 
 
 class MOMgrid:
-    def __init__(self, source, symmetric=True, verbose=False, hgrid_dtype="float32"):
+    def __init__(
+        self, source, topog=None, symmetric=True, verbose=False, hgrid_dtype="float32"
+    ):
         """Ocean Model grid object
 
         Parameters
@@ -21,6 +23,9 @@ class MOMgrid:
             file or an ocean_static.nc file. Optionally, a known configuration
             may also be specified. Known configurations are "OM4" and
             "OM4p5"
+        topog : xarray.Dataset or str, path-like, optional
+            Xarray dataset or path to ocean topography. If present the wet masks
+            corresponding to the grids will be generated, by default None.
         symmetric : bool, optional
             Return metrics compatible with symmetric memory mode,
             by default True
@@ -73,6 +78,26 @@ class MOMgrid:
                 "Source must be an xarray dataset, path, or known model config."
             )
 
+        # Load topog file
+        # TODO: add support for a gridspec tar bundle
+        if (isinstance(topog, xr.Dataset)) or (topog is None):
+            self.topog_source = str(type(topog))
+            topog = topog
+
+        elif isinstance(topog, str):
+            abspath = os.path.abspath(topog)
+            if os.path.exists(abspath):
+                self.topog_source = abspath
+                topog = xr.open_dataset(topog)
+            else:
+                raise ValueError(f"Unknown source: {source}")
+
+        else:
+            raise ValueError(
+                "Source must be an xarray dataset, path, or known model config."
+            )
+
+        # TODO: remove this object below; only used in testing
         self.ds = ds
 
         # Store whether or not the source is a static file or an hgrid file
