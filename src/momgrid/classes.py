@@ -53,6 +53,7 @@ class MOMgrid:
         dxt = "dxt"
         dyt = "dyt"
         deptho = "deptho"
+        wet = "wet"
 
         # Define names in supergrid file for future flexibility
         xvar = "x"
@@ -150,6 +151,7 @@ class MOMgrid:
             setattr(self, dxt, ds[dxt].values)
             setattr(self, dyt, ds[dyt].values)
             setattr(self, deptho, ds[deptho].values)
+            setattr(self, wet, ds[wet].values)
 
         elif self.is_hgrid:
             setattr(self, geolon, x[1::2, 1::2].astype(hgrid_dtype))
@@ -171,7 +173,9 @@ class MOMgrid:
                 _depth = topog[depth].values
                 _depth = np.where(_depth > max_depth, max_depth, _depth)
                 _depth = np.where(_depth > 0, _depth, np.nan)
+
                 setattr(self, deptho, _depth)
+                setattr(self, wet, np.where(np.isnan(_depth), 0.0, 1.0))
 
         # Fetch u-cell grid metrics
         suffix = "_u"
@@ -295,6 +299,7 @@ class MOMgrid:
         dxt = "dxt"
         dyt = "dyt"
         deptho = "deptho"
+        wet = "wet"
 
         tcell = ("", (ycenter, xcenter))
         ucell = ("_u", (ycenter, xcorner))
@@ -324,5 +329,8 @@ class MOMgrid:
 
         if self.deptho is not None:
             ds[deptho] = xr.DataArray(getattr(self, deptho), dims=tcell[1])
+
+        if hasattr(self, wet):
+            ds[wet] = xr.DataArray(getattr(self, wet), dims=tcell[1])
 
         return ds
