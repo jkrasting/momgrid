@@ -1,6 +1,56 @@
 """util.py : auxillary functions for inferring dataset characteristics"""
 
-__all__ = ["is_hgrid", "is_static", "is_symmetric"]
+__all__ = [
+    "get_file_type",
+    "is_hgrid",
+    "is_static",
+    "is_symmetric",
+    "read_netcdf_from_tar",
+]
+
+import os.path
+import tarfile
+import xarray as xr
+from io import BytesIO
+
+
+def get_file_type(fname):
+    """Opens a file and determines the file type based on the magic number
+
+    The magic number for NetCDF files is 'CDF\x01' or 'CDF\x02'.
+    The magic number for tar files depends on the variant but generally,
+    a USTAR tar file starts with "ustar" at byte offset 257 for 5 bytes.
+
+    Parameters
+    ----------
+    fname : str, path-like
+        Input file string
+    """
+
+    # make sure file exists
+    abspath = os.path.abspath(fname)
+    assert os.path.exists(abspath), f"File does not exist: {abspath}"
+
+    # open the file and read the first 512 bytes
+    with open(abspath, "rb") as f:
+        header = f.read(512)
+
+    # look for the NetCDF magic number
+    if header[0:3] == b"CDF":
+        result = "netcdf"
+
+    # look for the tar file signature
+    elif b"ustar" in header[257:262]:
+        result = "tar"
+
+    # look for gzipped file
+    elif header[0:2] == b"\x1f\x8b":
+        result = "tar"
+
+    else:
+        result = "unknown"
+
+    return result
 
 
 def is_hgrid(ds):
@@ -78,3 +128,39 @@ def is_symmetric(ds, xh="xh", yh="yh", xq="xq", yq="yq"):
     assert xdiff in [0, 1], "Dataset is neither symmetric or non-symmetric"
 
     return True if xdiff == 1 else False
+
+
+def read_netcdf_from_tar(tar_path, netcdf_name):
+    """Reads a netcdf file from within a tar file and returns an xarray Dataset
+
+    Parameters
+    ----------
+    tar_path : str, path-like
+        Path to tar file
+    netcdf_name : str
+        Name of NetCDF file contained within the tar file
+
+    Returns
+    -------
+        xarray.Dataset
+            Dataset object
+    """
+
+    with open(tar_path, "rb") as f:
+        tar_data = BytesIO(f.read())
+
+    with tarfile.open(fileobj=tar_data, mode="r:*") as tar:
+        if (
+            netcdf_name not in tar.getnames()
+            and f"./{netcdf_name}" not in tar.getnames()
+        ):
+            raise FileNotFoundError(
+                f"The NetCDF file {netcdf_name} was not found in the tar archive."
+            )
+
+        effective_name = (
+            netcdf_name if netcdf_name in tar.getnames() else f"./{netcdf_name}"
+        )
+
+        with tar.extractfile(effective_name) as netcdf_file:
+            return xr.open_dataset(BytesIO(netcdf_file.read()))

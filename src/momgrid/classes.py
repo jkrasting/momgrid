@@ -2,7 +2,13 @@
 
 __all__ = ["MOMgrid"]
 
-from momgrid.util import is_hgrid, is_static, is_symmetric
+from momgrid.util import (
+    get_file_type,
+    is_hgrid,
+    is_static,
+    is_symmetric,
+    read_netcdf_from_tar,
+)
 
 import xarray as xr
 import numpy as np
@@ -72,15 +78,36 @@ class MOMgrid:
             abspath = os.path.abspath(source)
             if os.path.exists(abspath):
                 self.source = abspath
-                ds = xr.open_dataset(source)
+                ftype = get_file_type(abspath)
+                if ftype == "netcdf":
+                    ds = xr.open_dataset(source)
+                elif ftype == "tar":
+                    ds = read_netcdf_from_tar(abspath, "ocean_hgrid.nc")
+
+                    try:
+                        topog = read_netcdf_from_tar(abspath, "ocean_topog.nc")
+                    except Exception as _:
+                        try:
+                            topog = read_netcdf_from_tar(abspath, "topog.nc")
+                        except Exception as _:
+                            warning.warn(
+                                "Unable to find topog in gridspec bundle. "
+                                + "Not processing wet masks or deptho"
+                            )
+
+                else:
+                    raise ValueError(f"Unknown input file type for {abspath}")
+
             elif source == "OM4":
                 self.source = "Default OM4 grid"
                 # TODO: implement known grid
                 # ds = xr.open_dataset("path_to_known_OM4_hgrid")
+
             elif source == "OM4p5":
                 self.source = "Default OM4p5 grid"
                 # TODO: implement known grid
                 # ds = xr.open_dataset("path_to_known_OM4p5_hgrid")
+
             else:
                 raise ValueError(f"Unknown source: {source}")
 
@@ -90,7 +117,6 @@ class MOMgrid:
             )
 
         # Load topog file
-        # TODO: add support for a gridspec tar bundle
         if (isinstance(topog, xr.Dataset)) or (topog is None):
             self.topog_source = str(type(topog))
             topog = topog
@@ -226,9 +252,10 @@ class MOMgrid:
             _area = _area if self.symmetric else _area[:, 1:]
             setattr(self, areacello + suffix, _area.astype(hgrid_dtype))
 
-            _wet = np.minimum(np.roll(_wet_padded, 1, axis=1), _wet_padded)
-            _wet = _wet if not self.symmetric else _wet[0:-1, :]
-            setattr(self, wet + suffix, _wet.astype(hgrid_dtype))
+            if topog is not None:
+                _wet = np.minimum(np.roll(_wet_padded, 1, axis=1), _wet_padded)
+                _wet = _wet if not self.symmetric else _wet[0:-1, :]
+                setattr(self, wet + suffix, _wet.astype(hgrid_dtype))
 
         # Fetch v-cell grid metrics
         suffix = "_v"
@@ -270,9 +297,10 @@ class MOMgrid:
             _area = _area if self.symmetric else _area[1:, :]
             setattr(self, areacello + suffix, _area.astype(hgrid_dtype))
 
-            _wet = np.minimum(np.roll(_wet_padded, 1, axis=0), _wet_padded)
-            _wet = _wet if not self.symmetric else _wet[:, 0:-1]
-            setattr(self, wet + suffix, _wet.astype(hgrid_dtype))
+            if topog is not None:
+                _wet = np.minimum(np.roll(_wet_padded, 1, axis=0), _wet_padded)
+                _wet = _wet if not self.symmetric else _wet[:, 0:-1]
+                setattr(self, wet + suffix, _wet.astype(hgrid_dtype))
 
         # Fetch corner cell grid metrics
         suffix = "_c"
@@ -348,8 +376,9 @@ class MOMgrid:
 
         # TODO: Add variable attributes -- long_name, standard_name, units, etc.
 
-        if self.deptho is not None:
-            ds[deptho] = xr.DataArray(getattr(self, deptho), dims=tcell[1])
+        if hasattr(self, "deptho"):
+            if self.deptho is not None:
+                ds[deptho] = xr.DataArray(getattr(self, deptho), dims=tcell[1])
 
         for cell_type in cell_types:
             if hasattr(self, wet + cell_type[0]):
