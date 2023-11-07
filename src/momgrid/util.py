@@ -1,6 +1,7 @@
 """util.py : auxillary functions for inferring dataset characteristics"""
 
 __all__ = [
+    "associate_coords",
     "get_file_type",
     "is_hgrid",
     "is_static",
@@ -14,6 +15,54 @@ import tarfile
 import numpy as np
 import xarray as xr
 from io import BytesIO
+
+
+def associate_coords(dsgrid, xobj, mapping=None):
+    """Takes an xarray Dataset containing grid information and propogates
+    the coordinate information to another xarray object
+
+    Parameters
+    ----------
+    dsgrid : xarray.core.Datatset
+        Dataset containing grid information
+    xobj : xarray.core.DataArray or xarray.core.Dataset
+        Xarray object containing variable information
+    mappings : dict, optional
+        Dictionary containing tuples of dimensions as keys and lists
+        of coordinates as values, by default, MOM6 conventions
+
+    Returns
+    -------
+        xarray.core.DataArray or xarray.core.Dataset
+    """
+
+    # Validate input types
+    assert isinstance(dsgrid, xr.Dataset), "Input grid object must be an xarray dataset"
+    assert isinstance(xobj, xr.DataArray) or isinstance(
+        xobj, xr.Dataset
+    ), "Input object must be an xarray object"
+
+    # Set default mappings
+    default_mapping = {
+        ("yh", "xh"): ["geolon", "geolat"],
+        ("yh", "xq"): ["geolon_u", "geolat_u"],
+        ("yq", "xh"): ["geolon_v", "geolat_v"],
+        ("yq", "xq"): ["geolon_c", "geolat_c"],
+    }
+
+    mapping = default_mapping if mapping is None else mapping
+    assert isinstance(mapping, dict), "mappings must be a dictionary"
+
+    # Populated the mappings dictionary with actual coordinate
+    # variables from dsgrid
+
+    for k, v in mapping.items():
+        print(k, v)
+
+    # Make a copy of the input object
+    _xobj = xobj.copy()
+
+    return _xobj
 
 
 def get_file_type(fname):
