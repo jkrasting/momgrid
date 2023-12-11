@@ -13,4 +13,5 @@ __requires__ = msg["Requires-Dist"]
 __requires_python__ = msg["Requires-Python"]
 
 from . import util
+from . import vertical
 from .classes import MOMgrid
