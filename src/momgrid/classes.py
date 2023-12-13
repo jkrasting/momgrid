@@ -8,7 +8,10 @@ from momgrid.util import (
     is_static,
     is_symmetric,
     read_netcdf_from_tar,
+    reset_nominal_coords,
 )
+
+from momgrid.external import static_to_xesmf
 
 import xarray as xr
 import numpy as np
@@ -21,6 +24,7 @@ class MOMgrid:
         self,
         source,
         topog=None,
+        depth_var="depth",
         symmetric=True,
         verbose=False,
         hgrid_dtype="float32",
@@ -38,6 +42,8 @@ class MOMgrid:
         topog : xarray.Dataset or str, path-like, optional
             Xarray dataset or path to ocean topography. If present the wet masks
             corresponding to the grids will be generated, by default None.
+        depth_var : str, optional
+            Name of the depth variable in the topog file, by default "depth"
         symmetric : bool, optional
             Return metrics compatible with symmetric memory mode,
             by default True
@@ -67,7 +73,9 @@ class MOMgrid:
         areavar = "area"
         dxvar = "dx"
         dyvar = "dy"
-        depth = "depth"
+
+        # Specified as kwarg
+        depth = depth_var
 
         # Load source file
         # TODO: add support for a gridspec tar bundle
@@ -174,10 +182,10 @@ class MOMgrid:
             setattr(self, geolon, ds[geolon].values)
             setattr(self, geolat, ds[geolat].values)
             setattr(self, areacello, ds[areacello].values)
-            setattr(self, dxt, ds[dxt].values)
-            setattr(self, dyt, ds[dyt].values)
             setattr(self, deptho, ds[deptho].values)
             setattr(self, wet, ds[wet].values)
+            setattr(self, dxt, ds[dxt].values)
+            setattr(self, dyt, ds[dyt].values)
 
         elif self.is_hgrid:
             setattr(self, geolon, x[1::2, 1::2].astype(hgrid_dtype))
@@ -381,9 +389,20 @@ class MOMgrid:
                 ds[deptho] = xr.DataArray(getattr(self, deptho), dims=tcell[1])
 
         for cell_type in cell_types:
-            if hasattr(self, wet + cell_type[0]):
-                ds[wet + cell_type[0]] = xr.DataArray(
-                    getattr(self, wet + cell_type[0]), dims=cell_type[1]
-                )
+            try:
+                if hasattr(self, wet + cell_type[0]):
+                    ds[wet + cell_type[0]] = xr.DataArray(
+                        getattr(self, wet + cell_type[0]), dims=cell_type[1]
+                    )
+            except:
+                warnings.warn(f"Unable to add wet_{cell_type[0]}")
+
+        # Promote dimensions to coords
+        for coord in ["xh", "yh", "xq", "yq"]:
+            ds[coord] = xr.DataArray(ds[coord], dims=(coord), coords={coord: ds[coord]})
+        ds = reset_nominal_coords(ds)
 
         return ds
+
+    def to_xesmf(self):
+        return static_to_xesmf(self.to_xarray())
