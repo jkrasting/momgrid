@@ -38,7 +38,7 @@ def get_file_type(fname):
         header = f.read(512)
 
     # look for the NetCDF magic number
-    if header[0:3] == b"CDF":
+    if (header[0:3] == b"CDF") or (header[1:4] == b"HDF"):
         result = "netcdf"
 
     # look for the tar file signature
