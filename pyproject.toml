@@ -52,3 +52,8 @@ starting_version = "0.0.1"
 [tool.dynamic]
 version = "placeholder"
 
+[tool.setuptools.package-data]
+momgrid = [
+    "woa18/WOA18_025deg_horiz_grid.nc",
+    "woa18/WOA18_1deg_horiz_grid.nc",
+]
