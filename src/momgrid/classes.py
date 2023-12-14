@@ -3,6 +3,7 @@
 __all__ = ["MOMgrid"]
 
 from momgrid.util import (
+    associate_grid_with_data,
     get_file_type,
     is_hgrid,
     is_static,
@@ -406,3 +407,6 @@ class MOMgrid:
 
     def to_xesmf(self):
         return static_to_xesmf(self.to_xarray())
+
+    def associate(self, data):
+        return associate_grid_with_data(self.to_xarray(), data)
