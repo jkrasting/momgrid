@@ -1,12 +1,14 @@
 """util.py : auxillary functions for inferring dataset characteristics"""
 
 __all__ = [
+    "associate_grid_with_data",
     "get_file_type",
     "is_hgrid",
     "is_static",
     "is_symmetric",
     "read_netcdf_from_tar",
     "reset_nominal_coords",
+    "verify_dim_lens",
 ]
 
 import os.path
@@ -14,6 +16,90 @@ import tarfile
 import numpy as np
 import xarray as xr
 from io import BytesIO
+
+
+def associate_grid_with_data(grid, data):
+    """Function to associate grid metrics with data
+
+    This function accepts a grid object and an xarray data object
+    and adds the associated geolon/geolat data to each variable.
+
+    Parameters
+    ----------
+    grid : xarray.Dataset
+        MOMgrid-generated Xarray dataset (using the .to_xarray method)
+    data : xarray.Dataset or xarray.DataArray
+        MOM6 output data
+
+    Returns
+    -------
+    xarray.Dataset or xarray.DataArray
+    """
+
+    # Define grid point types:
+    h_point = ("yh", "xh")
+    u_point = ("yh", "xq")
+    v_point = ("yq", "xh")
+    c_point = ("xq", "yq")
+
+    # variables broken out in case they need to be updated later
+    geolon = "geolon"
+    geolat = "geolat"
+    geolon_u = "geolon_u"
+    geolat_u = "geolat_u"
+    geolon_v = "geolon_v"
+    geolat_v = "geolat_v"
+    geolon_c = "geolon_c"
+    geolat_c = "geolat_c"
+
+    areacello = "areacello"
+    areacello_u = "areacello_u"
+    areacello_v = "areacello_v"
+    areacello_c = "areacello_c"
+
+    ds = data if isinstance(data, xr.Dataset) else xr.Dataset({data.name: data})
+
+    processed = {}
+
+    for var in ds.keys():
+        if set(h_point).issubset(ds[var].dims):
+            if verify_dim_lens(ds[var], grid[geolon]):
+                processed[var] = ds[var].assign_coords(
+                    {geolon: grid[geolon], geolat: grid[geolat]}
+                )
+                processed[areacello] = grid[areacello]
+
+        elif set(u_point).issubset(ds[var].dims):
+            if verify_dim_lens(ds[var], grid[geolon_u]):
+                processed[var] = ds[var].assign_coords(
+                    {geolon_u: grid[geolon_u], geolat_u: grid[geolat_u]}
+                )
+            processed[areacello_u] = grid[areacello_u]
+
+        elif set(v_point).issubset(ds[var].dims):
+            if verify_dim_lens(ds[var], grid[geolon_v]):
+                processed[var] = ds[var].assign_coords(
+                    {geolon_v: grid[geolon_v], geolat_v: grid[geolat_v]}
+                )
+            processed[areacello_v] = grid[areacello_v]
+
+        elif set(c_point).issubset(ds[var].dims):
+            if verify_dim_lens(ds[var], grid[geolon_c]):
+                processed[var] = ds[var].assign_coords(
+                    {geolon_c: grid[geolon_c], geolat_c: grid[geolat_c]}
+                )
+            processed[areacello_c] = grid[areacello_c]
+
+        else:
+            processed[var] = ds[var]
+
+    res = xr.Dataset(processed)
+    res.attrs = ds.attrs
+
+    if isinstance(data, xr.DataArray):
+        res = res[data.name]
+
+    return res
 
 
 def get_file_type(fname):
@@ -203,3 +289,37 @@ def reset_nominal_coords(xobj, tracer_dims=("xh", "yh"), velocity_dims=("xq", "y
             )
 
     return _xobj
+
+
+def verify_dim_lens(var1, var2, verbose=True):
+    """Function to test the equality of dimension lengths
+
+    This function determines if the shared dimensions between two
+    data arrays are of equal length
+
+    Parameters
+    ----------
+    var1 : xarray.DataArray
+    var2 : xarray.DataArray
+    verbose : bool, optional
+        Issue warnings if dimensions do not agree, by default True
+
+    Returns
+    -------
+    bool
+    """
+
+    dims = list(set(var1.dims).intersection(set(var2.dims)))
+    exception_count = 0
+    for dim in dims:
+        try:
+            assert len(var1[dim]) == len(var2[dim]), (
+                f"Different {dim} lengths for {var1.name}: "
+                + f"{len(var1[dim])}, {len(var2[dim])} "
+                + "Consider symmetric vs. non-symmetric memory "
+                + "output vs grid definition."
+            )
+        except AssertionError as exc:
+            warnings.warn(str(exc))
+            exception_count += 1
+    return exception_count == 0
