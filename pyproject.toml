@@ -54,6 +54,6 @@ version = "placeholder"
 
 [tool.setuptools.package-data]
 momgrid = [
-    "woa18/WOA18_025deg_horiz_grid.nc",
-    "woa18/WOA18_1deg_horiz_grid.nc",
+    "grids/WOA18_025deg_horiz_grid.nc",
+    "grids/WOA18_1deg_horiz_grid.nc",
 ]
