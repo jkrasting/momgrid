@@ -70,7 +70,7 @@ def woa18_grid(resolution=0.25):
             f"Unknown resolution: {resolution}. Must be either 0.25 or 1.0"
         )
 
-    fpath = pkgr.resource_filename("momgrid", f"woa18/WOA18_{res_str}deg_horiz_grid.nc")
+    fpath = pkgr.resource_filename("momgrid", f"grids/WOA18_{res_str}deg_horiz_grid.nc")
 
     dset = xr.open_dataset(fpath)
 
