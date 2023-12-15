@@ -17,6 +17,8 @@ import numpy as np
 import xarray as xr
 from io import BytesIO
 
+from momgrid.metadata import nominal_coord_metadata
+
 
 def associate_grid_with_data(grid, data):
     """Function to associate grid metrics with data
@@ -287,6 +289,8 @@ def reset_nominal_coords(xobj, tracer_dims=("xh", "yh"), velocity_dims=("xq", "y
             _xobj = _xobj.assign_coords(
                 {dim: list(np.arange(1.0, len(_xobj[dim]) + 1.0, 1.0))}
             )
+
+    _xobj = nominal_coord_metadata(_xobj)
 
     return _xobj
 
