@@ -11,6 +11,8 @@ __all__ = [
     "verify_dim_lens",
 ]
 
+import warnings
+
 import os.path
 import tarfile
 import numpy as np
@@ -208,16 +210,23 @@ def is_symmetric(ds, xh="xh", yh="yh", xq="xq", yq="yq"):
 
     """
 
-    xdiff = len(ds[xq]) - len(ds[xh])
-    ydiff = len(ds[yq]) - len(ds[yh])
+    if set(["xh", "yh", "xq", "yq"]).issubset(ds.variables):
+        xdiff = len(ds[xq]) - len(ds[xh])
+        ydiff = len(ds[yq]) - len(ds[yh])
 
-    # Basic validation checks
-    assert (
-        xdiff == ydiff
-    ), "Diffence of tracer and corner points must be identical for x and y dimensions"
-    assert xdiff in [0, 1], "Dataset is neither symmetric or non-symmetric"
+        # Basic validation checks
+        assert (
+            xdiff == ydiff
+        ), "Diffence of tracer and corner points must be identical for x and y dimensions"
+        assert xdiff in [0, 1], "Dataset is neither symmetric or non-symmetric"
 
-    return True if xdiff == 1 else False
+        result = True if xdiff == 1 else False
+
+    else:
+        warnings.warn("Unable to determine if grid is symmetric - assuming False")
+        result = False
+
+    return result
 
 
 def read_netcdf_from_tar(tar_path, netcdf_name):

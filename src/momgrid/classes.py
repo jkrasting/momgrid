@@ -398,7 +398,8 @@ class MOMgrid:
                         getattr(self, wet + cell_type[0]), dims=cell_type[1]
                     )
             except:
-                warnings.warn(f"Unable to add wet_{cell_type[0]}")
+                # warnings.warn(f"Unable to add wet_{cell_type[0]}")
+                pass
 
         # Promote dimensions to coords
         for coord in ["xh", "yh", "xq", "yq"]:
@@ -410,8 +411,8 @@ class MOMgrid:
 
         return ds
 
-    def to_xesmf(self):
-        return static_to_xesmf(self.to_xarray())
+    def to_xesmf(self, grid_type="t"):
+        return static_to_xesmf(self.to_xarray(), grid_type=grid_type)
 
     def associate(self, data):
         return associate_grid_with_data(self.to_xarray(), data)
