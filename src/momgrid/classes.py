@@ -2,6 +2,8 @@
 
 __all__ = ["MOMgrid"]
 
+from momgrid.metadata import add_metadata
+
 from momgrid.util import (
     associate_grid_with_data,
     get_file_type,
@@ -402,6 +404,9 @@ class MOMgrid:
         for coord in ["xh", "yh", "xq", "yq"]:
             ds[coord] = xr.DataArray(ds[coord], dims=(coord), coords={coord: ds[coord]})
         ds = reset_nominal_coords(ds)
+
+        # Add variable metadata
+        ds = add_metadata(ds)
 
         return ds
 
