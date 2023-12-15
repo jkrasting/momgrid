@@ -1,5 +1,6 @@
 """ external.py: functions to interface with external packages """
 
+import warnings
 import xarray as xr
 import pkg_resources as pkgr
 from momgrid.util import is_symmetric
@@ -24,26 +25,66 @@ def static_to_xesmf(dset, grid_type="t"):
         Xarray dataset to compatible with xesmf
     """
 
-    # Basic checks
-    assert (
-        grid_type == "t"
-    ), "Only tracer grids are supported (encouraged) for regridding."
     assert isinstance(dset, xr.Dataset), "Input must be an xarray dataset."
-    assert is_symmetric(dset), "Static file must be from symmetric memory mode."
 
-    #
     if grid_type == "t":
         dsout = xr.Dataset(
             {
                 "lat": dset.geolat,
                 "lon": dset.geolon,
-                "lat_b": dset.geolat_c,
-                "lon_b": dset.geolon_c,
                 "mask": dset.wet,
             }
         )
+
+        if is_symmetric(dset):
+            dsout["lat_b"] = dset.geolat_c
+            dsout["lon_b"] = dset.geolon_c
+        else:
+            warnings.warn("Grid is not symmetric, skipping bounds")
+
+    elif grid_type == "u":
+        dsout = xr.Dataset(
+            {
+                "lat": dset.geolat_u,
+                "lon": dset.geolon_u,
+            }
+        )
+
+        if "wet_u" in dset.keys():
+            dsout["mask"] = dset.wet_u
+        else:
+            warnings.warn("Wet mask not present.")
+
+    elif grid_type == "v":
+        dsout = xr.Dataset(
+            {
+                "lat": dset.geolat_v,
+                "lon": dset.geolon_v,
+            }
+        )
+
+        if "wet_v" in dset.keys():
+            dsout["mask"] = dset.wet_v
+        else:
+            warnings.warn("Wet mask not present.")
+
+    elif grid_type == "c":
+        dsout = xr.Dataset(
+            {
+                "lat": dset.geolat_c,
+                "lon": dset.geolon_c,
+            }
+        )
+
+        if "wet_c" in dset.keys():
+            dsout["mask"] = dset.wet_c
+        else:
+            warnings.warn("Wet mask not present.")
+
     else:
-        dsout = xr.Dataset()
+        raise ValueError(f"Unsupported grid type: {grid_type}")
+
+    dsout = dsout.reset_coords(drop=True)
 
     return dsout
 
