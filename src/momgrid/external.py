@@ -2,10 +2,39 @@
 
 import warnings
 import xarray as xr
+import xesmf as xe
 import pkg_resources as pkgr
 from momgrid.util import is_symmetric
 
-__all__ = ["static_to_xesmf", "woa18_grid"]
+__all__ = ["build_regridder_weights", "static_to_xesmf", "woa18_grid"]
+
+
+def build_regridder_weights(src, dst, periodic=True):
+    """Function to generate pre-calculated xesmf weight files"""
+
+    methods = ["bilinear", "nearest_s2d", "nearest_d2s"]
+
+    if (
+        set(["lat_b", "lon_b"]).issubset(
+            list(src.keys()) + list(src.coords) + list(src.dims)
+        )
+    ) and (
+        set(["lat_b", "lon_b"]).issubset(
+            list(dst.keys()) + list(dst.coords) + list(dst.dims)
+        )
+    ):
+        bounds = True
+        methods = methods + ["conservative", "conservative_normed", "patch"]
+    else:
+        bounds = False
+
+    files = []
+    for method in methods:
+        _ = xe.Regridder(src, dst, method, periodic=periodic)
+        _ = _.to_netcdf()
+        files.append(_)
+
+    return files
 
 
 def static_to_xesmf(dset, grid_type="t"):
