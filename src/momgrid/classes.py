@@ -14,7 +14,7 @@ from momgrid.util import (
     reset_nominal_coords,
 )
 
-from momgrid.external import static_to_xesmf
+from momgrid.external import build_regridder_weights, static_to_xesmf
 
 import xarray as xr
 import numpy as np
@@ -416,3 +416,33 @@ class MOMgrid:
 
     def associate(self, data):
         return associate_grid_with_data(self.to_xarray(), data)
+
+    def generate_weights(self, dsout, grid_type=["t", "u", "v", "c"]):
+        grid_type = list(grid_type) if not isinstance(grid_type, list) else grid_type
+        symmetric = "sym" if self.symmetric else "nosym"
+
+        if "t" in grid_type:
+            periodic = True
+            dsin = self.to_xesmf(grid_type="t")
+            files = build_regridder_weights(dsin, dsout, periodic=periodic)
+            _ = [os.rename(x, f"t_{symmetric}_{x}") for x in files]
+
+        if "u" in grid_type:
+            periodic = False
+            dsin = self.to_xesmf(grid_type="u")
+            files = build_regridder_weights(dsin, dsout, periodic=periodic)
+            _ = [os.rename(x, f"u_{symmetric}_{x}") for x in files]
+
+        if "v" in grid_type:
+            periodic = True
+            dsin = self.to_xesmf(grid_type="v")
+            files = build_regridder_weights(dsin, dsout, periodic=periodic)
+            _ = [os.rename(x, f"v_{symmetric}_{x}") for x in files]
+
+        if "c" in grid_type:
+            periodic = False
+            dsin = self.to_xesmf(grid_type="c")
+            files = build_regridder_weights(dsin, dsout, periodic=periodic)
+            _ = [os.rename(x, f"c_{symmetric}_{x}") for x in files]
+
+        return "Finished generating weights."
