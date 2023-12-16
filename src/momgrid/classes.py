@@ -411,8 +411,8 @@ class MOMgrid:
 
         return ds
 
-    def to_xesmf(self, grid_type="t"):
-        return static_to_xesmf(self.to_xarray(), grid_type=grid_type)
+    def to_xesmf(self, grid_type="t", filename=None):
+        return static_to_xesmf(self.to_xarray(), grid_type=grid_type, filename=filename)
 
     def associate(self, data):
         return associate_grid_with_data(self.to_xarray(), reset_nominal_coords(data))

@@ -37,7 +37,7 @@ def build_regridder_weights(src, dst, periodic=True):
     return files
 
 
-def static_to_xesmf(dset, grid_type="t"):
+def static_to_xesmf(dset, grid_type="t", filename=None):
     """Function to convert a MOM6 static file to one that can be
     fed into xesmf routines.
 
@@ -115,7 +115,14 @@ def static_to_xesmf(dset, grid_type="t"):
 
     dsout = dsout.reset_coords(drop=True)
 
-    return dsout
+    if filename is not None:
+        filename = str(filename)
+        dsout.to_netcdf(filename)
+        result = filename
+    else:
+        result = dsout
+
+    return result
 
 
 def woa18_grid(resolution=0.25):
