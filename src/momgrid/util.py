@@ -63,6 +63,20 @@ def associate_grid_with_data(grid, data):
 
     ds = data if isinstance(data, xr.Dataset) else xr.Dataset({data.name: data})
 
+    # Check that dimensions are identical
+    exceptions = []
+    for dim in ["xh", "yh", "xq", "yq"]:
+        if dim in grid.variables and dim in ds.variables:
+            try:
+                assert np.array_equal(grid[dim].values, ds[dim].values), dim
+            except AssertionError as exc:
+                exceptions.append(dim)
+
+    if len(exceptions) > 0:
+        raise RuntimeError(
+            f"Cannot associate grid to data. Different dims: {exceptions}"
+        )
+
     processed = {}
 
     for var in ds.keys():

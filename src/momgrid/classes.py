@@ -415,7 +415,7 @@ class MOMgrid:
         return static_to_xesmf(self.to_xarray(), grid_type=grid_type)
 
     def associate(self, data):
-        return associate_grid_with_data(self.to_xarray(), data)
+        return associate_grid_with_data(self.to_xarray(), reset_nominal_coords(data))
 
     def generate_weights(self, dsout, grid_type=["t", "u", "v", "c"]):
         grid_type = list(grid_type) if not isinstance(grid_type, list) else grid_type
