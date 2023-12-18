@@ -417,32 +417,32 @@ class MOMgrid:
     def associate(self, data):
         return associate_grid_with_data(self.to_xarray(), reset_nominal_coords(data))
 
-    def generate_weights(self, dsout, grid_type=["t", "u", "v", "c"]):
+    def generate_weights(self, dsout, grid_type=["t", "u", "v", "c"], periodic=None):
         grid_type = list(grid_type) if not isinstance(grid_type, list) else grid_type
         symmetric = "sym" if self.symmetric else "nosym"
 
         if "t" in grid_type:
-            periodic = True
+            _periodic = True if periodic is None else periodic
             dsin = self.to_xesmf(grid_type="t")
-            files = build_regridder_weights(dsin, dsout, periodic=periodic)
+            files = build_regridder_weights(dsin, dsout, periodic=_periodic)
             _ = [os.rename(x, f"t_{symmetric}_{x}") for x in files]
 
         if "u" in grid_type:
-            periodic = False
+            _periodic = False if periodic is None else periodic
             dsin = self.to_xesmf(grid_type="u")
-            files = build_regridder_weights(dsin, dsout, periodic=periodic)
+            files = build_regridder_weights(dsin, dsout, periodic=_periodic)
             _ = [os.rename(x, f"u_{symmetric}_{x}") for x in files]
 
         if "v" in grid_type:
-            periodic = True
+            _periodic = True if periodic is None else periodic
             dsin = self.to_xesmf(grid_type="v")
-            files = build_regridder_weights(dsin, dsout, periodic=periodic)
+            files = build_regridder_weights(dsin, dsout, periodic=_periodic)
             _ = [os.rename(x, f"v_{symmetric}_{x}") for x in files]
 
         if "c" in grid_type:
-            periodic = False
+            _periodic = False if periodic is None else periodic
             dsin = self.to_xesmf(grid_type="c")
-            files = build_regridder_weights(dsin, dsout, periodic=periodic)
+            files = build_regridder_weights(dsin, dsout, periodic=_periodic)
             _ = [os.rename(x, f"c_{symmetric}_{x}") for x in files]
 
         return "Finished generating weights."
