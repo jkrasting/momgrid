@@ -8,6 +8,7 @@ __all__ = [
     "is_symmetric",
     "read_netcdf_from_tar",
     "reset_nominal_coords",
+    "standard_grid_area",
     "verify_dim_lens",
 ]
 
@@ -316,6 +317,39 @@ def reset_nominal_coords(xobj, tracer_dims=("xh", "yh"), velocity_dims=("xq", "y
     _xobj = nominal_coord_metadata(_xobj)
 
     return _xobj
+
+
+def standard_grid_area(lat_b, lon_b, rad_earth=6371.0e3):
+    """Function to calculate the cell areas for a standard grid
+
+    Parameters
+    ----------
+    lat_b : list or numpy.ndarray
+        1-D vector of latitude cell bounds
+    lon_b : list or numpy.ndarray
+        1-D vector of longitude cell bounds
+    rad_earth : float, optional
+        Radius of the Earth in meters, by default 6371.0e3
+
+    Returns
+    -------
+    numpy.ndarray
+        2-dimensional array of cell areas
+    """
+
+    lat_b = np.array(lat_b)
+    lon_b = np.array(lon_b)
+
+    sin_lat_b = np.sin(np.radians(lat_b))
+
+    dy = np.abs(sin_lat_b[1:] - sin_lat_b[0:-1])
+    dx = np.abs(lon_b[1:] - lon_b[0:-1])
+
+    dy2d, dx2d = np.meshgrid(dx, dy)
+
+    area = (np.pi / 180.0) * (rad_earth**2) * dy2d * dx2d
+
+    return area
 
 
 def verify_dim_lens(var1, var2, verbose=True):
