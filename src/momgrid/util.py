@@ -84,30 +84,42 @@ def associate_grid_with_data(grid, data):
         if set(h_point).issubset(ds[var].dims):
             if verify_dim_lens(ds[var], grid[geolon]):
                 processed[var] = ds[var].assign_coords(
-                    {geolon: grid[geolon], geolat: grid[geolat]}
+                    {
+                        geolon: grid[geolon],
+                        geolat: grid[geolat],
+                        areacello: grid[areacello],
+                    }
                 )
-                processed[areacello] = grid[areacello]
 
         elif set(u_point).issubset(ds[var].dims):
             if verify_dim_lens(ds[var], grid[geolon_u]):
                 processed[var] = ds[var].assign_coords(
-                    {geolon_u: grid[geolon_u], geolat_u: grid[geolat_u]}
+                    {
+                        geolon_u: grid[geolon_u],
+                        geolat_u: grid[geolat_u],
+                        areacello_u: grid[areacello_u],
+                    }
                 )
-            processed[areacello_u] = grid[areacello_u]
 
         elif set(v_point).issubset(ds[var].dims):
             if verify_dim_lens(ds[var], grid[geolon_v]):
                 processed[var] = ds[var].assign_coords(
-                    {geolon_v: grid[geolon_v], geolat_v: grid[geolat_v]}
+                    {
+                        geolon_v: grid[geolon_v],
+                        geolat_v: grid[geolat_v],
+                        areacello_v: grid[areacello_v],
+                    }
                 )
-            processed[areacello_v] = grid[areacello_v]
 
         elif set(c_point).issubset(ds[var].dims):
             if verify_dim_lens(ds[var], grid[geolon_c]):
                 processed[var] = ds[var].assign_coords(
-                    {geolon_c: grid[geolon_c], geolat_c: grid[geolat_c]}
+                    {
+                        geolon_c: grid[geolon_c],
+                        geolat_c: grid[geolat_c],
+                        areacello_c: grid[areacello_c],
+                    }
                 )
-            processed[areacello_c] = grid[areacello_c]
 
         else:
             processed[var] = ds[var]
