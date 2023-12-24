@@ -125,7 +125,8 @@ def associate_grid_with_data(grid, data):
         else:
             processed[var] = ds[var]
 
-    res = xr.Dataset(processed)
+    res = [xr.Dataset({k: v}) for k, v in processed.items()]
+    res = xr.merge(res, compat="override")
     res.attrs = ds.attrs
 
     if isinstance(data, xr.DataArray):
