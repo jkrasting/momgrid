@@ -1,6 +1,8 @@
 """classes.py : momgrid object definitions """
 
-__all__ = ["MOMgrid"]
+__all__ = ["MOMgrid", "Gridset"]
+
+from momgrid.external import woa18_grid
 
 from momgrid.metadata import add_metadata
 
@@ -12,6 +14,7 @@ from momgrid.util import (
     is_symmetric,
     read_netcdf_from_tar,
     reset_nominal_coords,
+    standard_grid_area,
 )
 
 from momgrid.external import build_regridder_weights, static_to_xesmf
@@ -19,6 +22,7 @@ from momgrid.external import build_regridder_weights, static_to_xesmf
 import xarray as xr
 import numpy as np
 import os
+import pickle
 import warnings
 
 
@@ -446,3 +450,288 @@ class MOMgrid:
             _ = [os.rename(x, f"c_{symmetric}_{x}") for x in files]
 
         return "Finished generating weights."
+
+
+class Gridset:
+    def __init__(self, dset, ignore=None):
+        """Combination class of MOM grid object and a model data set
+
+        Parameters
+        ----------
+        dset : xarray.Dataset, str (path-like), or list (paths)
+            Model dataset object, path to NetCDF file, or list of files
+        ignore : str or list
+            List of variables to ignore when processing the dataset
+        """
+
+        # Open dataset if an xarray Dataset object is not supplied
+        if not isinstance(dset, xr.Dataset):
+            dset = xr.open_mfdataset(dset, use_cftime=True)
+
+        # Filter variables supplied by the ignore kwarg
+        if ignore is not None:
+            ignore = [ignore] if not isinstance(ignore, list) else ignore
+            ignore = [x for x in ignore if x in dset.keys()]
+            dset = dset.drop_vars(ignore)
+
+        # Get dimension lengths. Note the MOM6 conventions of
+        # xh, yh, xq, and yq are used below
+        self.xh = len(dset["xh"]) if "xh" in dset.dims else 0
+        self.yh = len(dset["yh"]) if "yh" in dset.dims else 0
+        self.xq = len(dset["xq"]) if "xq" in dset.dims else 0
+        self.yq = len(dset["yq"]) if "yq" in dset.dims else 0
+
+        # Construct a list of tuples of the grids inferred from the
+        # supplied input dataset
+        self.grid = [
+            (self.yh, self.xh),
+            (self.yh, self.xq),
+            (self.yq, self.xh),
+            (self.yq, self.xq),
+        ]
+
+        # Infer the model type based on the grid dimensions
+
+        if any(x in [(1080, 1441), (1081, 1440), (1081, 1441)] for x in self.grid):
+            self.model = "om4_sym"
+            self._periodic = True
+
+        elif any(x in [(576, 721), (577, 720), (577, 721)] for x in self.grid):
+            self.model = "esm4_sym"
+            self._periodic = True
+
+        # Note that if a dataset contains ONLY variables in the tracer grid,
+        # it would be better to use a symmetric version of the grid since it
+        # correctly includes the corner cell data
+        elif any(x in [(1080, 1440)] for x in self.grid):
+            self.model = "om4_nonsym"
+            self._periodic = True
+
+        # Note that if a dataset contains ONLY variables in the tracer grid,
+        # it would be better to use a symmetric version of the grid since it
+        # correctly includes the corner cell data
+        elif any(x in [(576, 720)] for x in self.grid):
+            self.model = "esm4_nonsym"
+            self._periodic = True
+
+        elif any(
+            x in [(1161, 1440), (1161, 1441), (1162, 1440), (1162, 1441)]
+            for x in self.grid
+        ):
+            self.model = "om5"
+            self._periodic = True
+
+        elif any(
+            x in [(845, 775), (845, 776), (846, 775), (846, 776)] for x in self.grid
+        ):
+            self.model = "nwa12"
+            self._periodic = False
+
+        elif any(x in [(320, 360)] for x in self.grid):
+            self.model = "spearmed_nonsym"
+            self._periodic = True
+
+        else:
+            self.model = None
+            self._periodic = None
+
+        # Load a cached copy of the grid object for the specific model.
+        # This cached copy is significantly faster than calculating each time.
+        # However, it might be a good idea to allow run-time calculation
+        # as an option in the future for new or unsupported model configs.
+
+        if self.model is not None:
+            dir = "grid_weights"
+            try:
+                file = open(f"{dir}/{self.model}.pkl", "rb")
+                self.grid = pickle.load(file)
+                file.close()
+            except Exception as exc:
+                raise ValueError(f"Unable to load grid: {self.model}")
+        else:
+            raise ValueError("Unable to infer model from input data.")
+
+        # Associate the 2D geolat/geolon as coordinate variables
+        self.data = self.grid.associate(dset)
+
+        # Drop singleton dimensions and coordinates
+        self.data = self.data.squeeze()
+
+        # Re-apply metadata for coordinate variables
+        self.coord_attrs = {}
+        for coord in self.data.coords:
+            self.coord_attrs[coord] = self.data[coord].attrs
+
+    def shape_string(self, grid_type):
+        """Constructs xESMF string for cached grid weights"""
+        if grid_type == "t":
+            shape = f"{self.yh}x{self.xh}"
+        elif grid_type == "u":
+            shape = f"{self.yh}x{self.xq}"
+        elif grid_type == "v":
+            shape = f"{self.yq}x{self.xh}"
+        elif grid_type == "c":
+            shape = f"{self.yq}x{self.xq}"
+        else:
+            shape = ""
+
+        return shape
+
+    def grid_type(self, dims):
+        """Infers grid type based on dimension names"""
+        if set(("yh", "xh")).issubset(dims):
+            grid_type = "t"
+        elif set(("yh", "xq")).issubset(dims):
+            grid_type = "u"
+        elif set(("yq", "xh")).issubset(dims):
+            grid_type = "v"
+        elif set(("yq", "xq")).issubset(dims):
+            grid_type = "c"
+        else:
+            grid_type = ""
+
+        return grid_type
+
+    def periodic(self, grid_type):
+        """Returns False for u and c grids"""
+        return False if grid_type in ["u", "c"] else self._periodic
+
+    def regrid_var(self, var, method="bilinear", resolution=1.0):
+        """Regrids a variable using xESMF
+
+        Parameters
+        ----------
+        var : str
+            Variable name
+        method : str, optional
+            xESMF regridding method, by default "bilinear"
+        resolution : float
+            Target WOA18 grid resolution (1.0 or 0.25), by default 0.25
+
+        Returns
+        -------
+        xarray.DataArray
+        """
+
+        # Import deliberately added here. (Did not want to make the package
+        # dependent on xESMF -- just needed for regridding)
+
+        import xesmf as xe
+
+        # Determine grid type
+        grid_type = self.grid_type(self.data[var].dims)
+        symmetric = "sym" if self.grid.symmetric else "nosym"
+
+        # Determine if grid is periodic
+        if method not in ["conservative"]:
+            periodic = "_peri" if self.periodic(grid_type) else ""
+        else:
+            periodic = ""
+
+        # Constuct xESMF shape string
+        shape = self.shape_string(grid_type)
+
+        # Setup output grid
+
+        if resolution == 1.0:
+            grid_dst = woa18_grid(resolution=1.0)
+            dims_dst = "180x360"
+
+        elif resolution == 0.25:
+            grid_dst = woa18_grid(resolution=0.25)
+            dims_dst = "720x1440"
+
+        # Construct full name of the saved regridder weights
+        regridder = f"{grid_type}_{symmetric}_{method}_{shape}_{dims_dst}{periodic}"
+
+        # Check if a cached version of the regridder exists. If not, load it
+        if not hasattr(self, regridder):
+            setattr(
+                self,
+                regridder,
+                xe.Regridder(
+                    self.grid.to_xesmf(grid_type=grid_type),
+                    grid_dst,
+                    method,
+                    weights=f"grid_weights/{regridder}.nc",
+                ),
+            )
+
+        # Regrid the variable using the regridder
+        _regridder = getattr(self, regridder)
+        result = _regridder(self.data[var])
+
+        # Set variable name, attributes, and coordinates
+        result.name = var
+        result.attrs = {**result.attrs, **self.data[var].attrs}
+        for coord in result.coords:
+            if coord in self.data[var].coords:
+                if len(result.coords[coord].attrs) == 0:
+                    result[coord].attrs = self.coord_attrs[coord]
+
+        return result
+
+    def regrid(self, method="bilinear", resolution=1.0):
+        """Loop over all variables and regrid"""
+
+        # Create an empty dataset to hold the results
+        dsout = xr.Dataset()
+
+        # Loop over variables
+        for var in list(self.data.keys()):
+            try:
+                dsout[var] = self.regrid_var(var, method=method, resolution=resolution)
+
+            # Warn if regridding failed
+            except Exception as exc:
+                warnings.warn(str(exc))
+                pass
+
+        # Add back in the mask and the bounds
+        woa_grid = woa18_grid(resolution=resolution)
+        for var in ["lat_b", "lon_b", "mask"]:
+            dsout[var] = woa_grid[var]
+            dsout = dsout.set_coords(var)
+
+        # Calculate the cell area and set attributes
+        dsout["areacello"] = xr.DataArray(
+            standard_grid_area(dsout["lat_b"], dsout["lon_b"]),
+            dims=("lat", "lon"),
+        )
+
+        dsout["areacello"].attrs = {
+            "units": "m2",
+            "long_name": "Ocean Grid-Cell Area",
+            "standard_name": "cell_area",
+        }
+
+        # Make cell area a coordinate variable
+        dsout = dsout.set_coords("areacello")
+
+        return dsout
+
+    def subset(self, varlist=None):
+        """Function to subset the data"""
+
+        # Make a copy of the dataset object
+        dset = self.data
+
+        if varlist is not None:
+            varlist = [varlist] if isinstance(varlist, str) else varlist
+            assert isinstance(varlist, list), "varlist must be a str or list"
+            dset = [dset[x] for x in varlist if x in dset.keys()]
+            dset = xr.Dataset({x.name: x for x in dset})
+
+        # Reassign the result to the object
+        self.data = dset
+
+        # Return a list of the retained variables
+        return list(self.data.keys())
+
+    def __repr__(self):
+        # TODO: write useful information about the object
+        return str(self.data)
+
+    def __str__(self):
+        # TODO: write useful information about the object
+        return self.data

@@ -18,3 +18,4 @@ from . import util
 from . import external
 from . import vertical
 from .classes import MOMgrid
+from .classes import Gridset
