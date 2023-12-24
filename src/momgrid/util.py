@@ -2,6 +2,7 @@
 
 __all__ = [
     "associate_grid_with_data",
+    "extract_level",
     "get_file_type",
     "is_hgrid",
     "is_static",
@@ -124,13 +125,40 @@ def associate_grid_with_data(grid, data):
         else:
             processed[var] = ds[var]
 
-    res = xr.Dataset(processed)
+    res = [xr.Dataset({k: v}) for k, v in processed.items()]
+    res = xr.merge(res, compat="override")
     res.attrs = ds.attrs
 
     if isinstance(data, xr.DataArray):
         res = res[data.name]
 
     return res
+
+
+def extract_level(dset, level):
+    """Function to extract a depth level from a dataset
+
+    This function is a wrapper for xarray's intrinsic .sel() method
+    but uses cfxarray to infer the name of the vertical dimension.
+
+    Parameters
+    ----------
+    dset : xarray.Dataset
+        Input dataset
+    level : float
+        Depth level to select (m)
+
+    Returns
+    -------
+    xarray.Dataset
+    """
+
+    zaxes = dset.cf.axes["Z"]
+
+    for zax in zaxes:
+        dset = dset.sel({zax: level}, method="nearest")
+
+    return dset
 
 
 def get_file_type(fname):
