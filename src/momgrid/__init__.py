@@ -14,6 +14,7 @@ __requires_python__ = msg["Requires-Python"]
 
 from . import geoslice
 from . import metadata
+from . import plot
 from . import util
 from . import external
 from . import vertical
