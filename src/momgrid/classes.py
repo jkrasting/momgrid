@@ -708,6 +708,10 @@ class Gridset:
         # Make cell area a coordinate variable
         dsout = dsout.set_coords("areacello")
 
+        if "z_l" in dsout.coords:
+            if "z_i" not in dsout.coords and "z_i" in self.data.keys():
+                dsout = dsout.assign_coords({"z_i": self.data["z_i"]})
+
         return dsout
 
     def subset(self, varlist=None):
@@ -721,6 +725,9 @@ class Gridset:
             assert isinstance(varlist, list), "varlist must be a str or list"
             dset = [dset[x] for x in varlist if x in dset.keys()]
             dset = xr.Dataset({x.name: x for x in dset})
+
+            if "z_i" not in dset.coords and "z_i" in self.data.keys():
+                dset = dset.assign_coords({"z_i": self.data["z_i"]})
 
         # Reassign the result to the object
         self.data = dset
