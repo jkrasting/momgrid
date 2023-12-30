@@ -218,6 +218,7 @@ def compare_2d(
     splitscale=None,
     projection=None,
     singlepanel=False,
+    dpi=300,
 ):
     """Compare two datasets on a set of matplotlib subplots.
 
@@ -252,6 +253,7 @@ def compare_2d(
         Calculate bias and RMS difference, by default True
     splitscale : float, optional
     projection :
+    dpi
 
     Returns
     -------
@@ -265,7 +267,7 @@ def compare_2d(
     # in order to emphasize the difference between the two variables
 
     # Set the overall figure size, maintain a 16:9 aspect ratio, and set dpi
-    fig = plt.figure(figsize=(16, 9), dpi=300, facecolor="white")
+    fig = plt.figure(figsize=(16, 9), dpi=dpi, facecolor="white")
 
     # Create a grid layout.
     grid = plt.GridSpec(16, 16, figure=fig)
