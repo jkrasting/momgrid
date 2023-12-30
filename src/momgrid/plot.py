@@ -1,13 +1,15 @@
 """ plot.py - plotting routines """
 
 import warnings
+import xarray as xr
+import VerticalSplitScale
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
 
 from momgrid.geoslice import geoslice
 
-__all__ = ["add_stats_box", "generate_cmap_and_norm", "round_step", "xy_compare"]
+__all__ = ["add_stats_box", "generate_cmap_and_norm", "round_step", "compare_2d"]
 
 
 def add_stats_box(
@@ -199,7 +201,7 @@ def generate_cmap_and_norm(
     return cmap, norm
 
 
-def xy_compare(
+def compare_2d(
     var1,
     var2,
     label1=None,
@@ -211,6 +213,10 @@ def xy_compare(
     clim_diff=None,
     cmap1="viridis",
     cmap2="RdBu_r",
+    stats=True,
+    plot_type=None,
+    splitscale=None,
+    projection=None,
 ):
     """Compare two datasets on a set of matplotlib subplots.
 
@@ -241,6 +247,10 @@ def xy_compare(
         Colormap for the first dataset's plot.
     cmap2 : str, optional
         Colormap for the difference plot.
+    stats : bool, optional
+        Calculate bias and RMS difference, by default True
+    splitscale : float, optional
+    projection :
 
     Returns
     -------
@@ -265,27 +275,56 @@ def xy_compare(
 
     # Define the subplot axes
     ax0 = fig.add_subplot(grid[0, :])  # Header
-    ax1 = fig.add_subplot(grid[1:8, :6], facecolor=facecolor)  # Left Top
-    ax2 = fig.add_subplot(grid[8:15, :6], facecolor=facecolor)  # Left Bottom
-    ax3 = fig.add_subplot(grid[1:12, 6:15], facecolor=facecolor)  # Right
+    ax1 = fig.add_subplot(
+        grid[1:8, :6], facecolor=facecolor, projection=projection
+    )  # Left Top
+    ax2 = fig.add_subplot(
+        grid[8:15, :6], facecolor=facecolor, projection=projection
+    )  # Left Bottom
+    ax3 = fig.add_subplot(
+        grid[1:12, 6:15], facecolor=facecolor, projection=projection
+    )  # Right
     ax4 = fig.add_subplot(grid[1:12, 15:16])  # Zonal Means
     ax5 = fig.add_subplot(grid[12:13, 6:15])  # Meridional Means
     ax6 = fig.add_subplot(grid[15:16, :6])  # Left Colorbar
     ax7 = fig.add_subplot(grid[13:14, 6:15])  # Right Colorbar
     ax8 = fig.add_subplot(grid[14:16, 6:])  # Info panel
 
+    if projection is not None:
+        import cartopy.crs as ccrs
+
+        projection = ccrs.PlateCarree()
+
     # Turn off the bounding boxes for the header and footer space
     _ = ax0.axis("off")
     _ = ax8.axis("off")
 
     # Infer the names of the grid coordinates and dimensions
-    xcoord = var1.cf.coordinates["longitude"][0]
-    ycoord = var1.cf.coordinates["latitude"][0]
-    ydim = var1.dims[-2]
-    xdim = var1.dims[-1]
+    if plot_type is None:
+        _var = var1.reset_coords(drop=True)
+        if "longitude" in _var.cf.coordinates:
+            plot_type = "yx"
+        elif "vertical" in _var.cf.coordinates:
+            plot_type = "yz"
+        else:
+            raise ValueError("Unable to determine if this yx or yz plot")
 
-    # Infer the cell area name
-    area = var1.cf.standard_names["cell_area"][0]
+    _var = var1
+
+    if plot_type == "yx":
+        abscissa = _var.cf.coordinates["longitude"][0]
+        ordinate = _var.cf.coordinates["latitude"][0]
+    elif plot_type == "yz":
+        abscissa = _var.cf.coordinates["latitude"][0]
+        ordinate = _var.cf.coordinates["vertical"][0]
+
+    ydim = _var.dims[-2]
+    xdim = _var.dims[-1]
+
+    if plot_type == "yz":
+        if splitscale is not None:
+            zbot = float(min(_var[ydim].max(), 6500))
+            splitscale = [zbot, splitscale, 0.0]
 
     # Attempt to determine the metadata from the first variable
     var_name = var1.name
@@ -313,10 +352,17 @@ def xy_compare(
         boxstyle="round,pad=0.3", edgecolor="black", linewidth=1.5, facecolor="white"
     )
 
+    # Drop portions if coordinates are NaNs
+    var1 = var1.where(~var1[abscissa].isnull(), drop=True)
+    var2 = var2.where(~var2[abscissa].isnull(), drop=True)
+
     # Subset a region of the variables if requested
     if isinstance(xrng, tuple) and isinstance(yrng, tuple):
         var1 = geoslice(var1, x=xrng, y=yrng)
         var2 = geoslice(var2, x=xrng, y=yrng)
+        geosliced = True
+    else:
+        geosliced = False
 
     # Figure out the colorbar range based on data from both variables
     if clim is None:
@@ -325,7 +371,22 @@ def xy_compare(
     cmap, norm = generate_cmap_and_norm(*clim, levels, cmap_name=cmap1)
 
     # Top left panel - Dataset "A"
-    cb1 = ax1.pcolormesh(var1[xcoord], var2[ycoord], var1.values, cmap=cmap, norm=norm)
+    if projection is not None:
+        cb1 = ax1.pcolormesh(
+            var1[abscissa],
+            var2[ordinate],
+            var1.values,
+            cmap=cmap,
+            norm=norm,
+            transform=projection,
+        )
+        ax1.coastlines(linewidth=0.5)
+
+    else:
+        cb1 = ax1.pcolormesh(
+            var1[abscissa], var2[ordinate], var1.values, cmap=cmap, norm=norm
+        )
+
     ax1.text(
         0.05,
         0.05,
@@ -337,7 +398,22 @@ def xy_compare(
     )
 
     # Bottom left panel - Dataset "B"
-    cb2 = ax2.pcolormesh(var2[xcoord], var2[ycoord], var2.values, cmap=cmap, norm=norm)
+    if projection is not None:
+        cb2 = ax2.pcolormesh(
+            var2[abscissa],
+            var2[ordinate],
+            var2.values,
+            cmap=cmap,
+            norm=norm,
+            transform=projection,
+        )
+        ax2.coastlines(linewidth=0.5)
+
+    else:
+        cb2 = ax2.pcolormesh(
+            var2[abscissa], var2[ordinate], var2.values, cmap=cmap, norm=norm
+        )
+
     ax2.text(
         0.05,
         0.05,
@@ -372,9 +448,28 @@ def xy_compare(
     # Right Panel - Difference plot
     # This panel also includes "wings" for the zonal and meridional RMS diff
 
-    cb3 = ax3.pcolormesh(
-        diffvar[xcoord], diffvar[ycoord], diffvar.values, cmap=cmap, norm=norm
-    )
+    if projection is not None:
+        cb3 = ax3.pcolormesh(
+            diffvar[abscissa],
+            diffvar[ordinate],
+            diffvar.values,
+            cmap=cmap,
+            norm=norm,
+            transform=projection,
+        )
+        ax3.coastlines(linewidth=0.5)
+
+        if geosliced:
+            ax3.set_extent([*xrng, *yrng], crs=projection)
+
+    else:
+        cb3 = ax3.pcolormesh(
+            diffvar[abscissa],
+            diffvar[ordinate],
+            diffvar.values,
+            cmap=cmap,
+            norm=norm,
+        )
 
     ax3.text(
         0.05,
@@ -386,63 +481,133 @@ def xy_compare(
         bbox=props,
     )
 
-    # Calculate RMSE
-    var_se = diffvar**2
-    var_rmse_xave = np.sqrt(var_se.weighted(diffvar[area]).mean(xdim))
-    var_rmse_yave = np.sqrt(var_se.weighted(diffvar[area]).mean(ydim))
-    rms = float(np.sqrt(var_se.weighted(diffvar[area]).mean((ydim, xdim))))
-
-    # Generate y nominal coordinates
-    if len(diffvar[ycoord].shape) == 2:
-        nominal_y = diffvar[ycoord].mean(xdim)
-    else:
-        nominal_y = diffvar[ycoord]
-
-    # Generate x nominal coordinates
-    if len(diffvar[ycoord].shape) == 2:
-        nominal_x = diffvar[xcoord].mean(ydim)
-    else:
-        nominal_x = diffvar[xcoord]
-
-    # Plot the zonal mean RMS difference
-    ax4.plot(var_rmse_xave, nominal_y, color="k")
-    ax4.set_ylim(nominal_y.min(), nominal_y.max())
-    ax4.set_yticks([])
-    ax4.text(0.5, 1.01, "RMSE", ha="center", fontsize=8, transform=ax4.transAxes)
-
-    # Plot the meridional mean RMS difference
-    ax5.plot(nominal_x, var_rmse_yave, color="k")
-    ax5.set_xlim(nominal_x.min(), nominal_x.max())
-    ax5.set_xticks([])
-    ax5.yaxis.set_label_position("right")
-    ax5.yaxis.tick_right()
-
     # Add the colorbars to the plot
     fig.colorbar(cb1, cax=ax6, orientation="horizontal", extend="both", label=units)
     fig.colorbar(cb3, cax=ax7, orientation="horizontal", extend="both", label=units)
 
-    # Adjust subplot parameters if needed
-    plt.subplots_adjust(wspace=0.7, hspace=0.8)
+    if plot_type == "yz":
+        for ax in [ax1, ax2, ax3]:
+            if splitscale is not None:
+                ax.set_yscale("splitscale", zval=splitscale)
+                ax.axhline(
+                    y=splitscale[1], color="black", linewidth=0.5, linestyle="dashed"
+                )
+            else:
+                ax.invert_yaxis()
 
-    add_stats_box(ax8, 0.0, 0.5, "Dataset A", float(var1.min()), float(var1.max()))
+        plt.subplots_adjust(wspace=2.0, hspace=1.5)
 
-    add_stats_box(ax8, 0.15, 0.5, "Dataset B", float(var2.min()), float(var2.max()))
+    else:
+        # Remove ticks and labels
+        for ax in [ax1, ax2, ax3]:
+            ax.set_xticks([])
+            ax.set_yticks([])
 
-    add_stats_box(
-        ax8,
-        0.6,
-        0.5,
-        "Difference",
-        float(diffvar.min()),
-        float(diffvar.max()),
-        float(diffvar.weighted(diffvar[area]).mean((ydim, xdim))),
-        rms,
-        ha="left",
-    )
+        plt.subplots_adjust(wspace=0.7, hspace=0.8)
 
-    # Remove ticks and labels
-    for ax in [ax1, ax2, ax3]:
-        ax.set_xticks([])
-        ax.set_yticks([])
+    def infer_bounds(centers, start=None, end=None):
+        midpoints = (centers[1:] + centers[:-1]) / 2.0
+        front = centers[0] - np.abs(centers[0] - midpoints[0])
+        end = centers[-1] + np.abs(centers[-1] - midpoints[-1])
+        midpoints = np.insert(midpoints, 0, front)
+        midpoints = np.append(midpoints, end)
+        return np.clip(midpoints, start, end)
+
+    # Turn off stats for yz plot (for now)
+    if plot_type == "yz":
+        zbounds = infer_bounds(diffvar[ordinate].values, 0, None)
+        dz = zbounds[1:] - zbounds[0:-1]
+
+        ybounds = infer_bounds(diffvar[abscissa].values, -90, 90)
+        ybounds = np.radians(ybounds)
+
+        upper_y = ybounds[1:]
+        lower_y = ybounds[0:-1]
+
+        dy = (
+            2.0
+            * 6371.0e3
+            * np.arcsin(np.sqrt(np.sin((upper_y - lower_y) / 2.0) ** 2.0))
+        )
+
+        weights = xr.DataArray(
+            dz[:, np.newaxis] * dy, dims=diffvar.dims, coords=diffvar.coords
+        )
+
+    else:
+        # Infer the cell area name
+        area = var1.cf.standard_names["cell_area"][0]
+        weights = var1[area]
+
+    if stats:
+        # Calculate RMSE
+        var_se = diffvar**2
+        var_rmse_xave = np.sqrt(var_se.weighted(weights).mean(xdim))
+        var_rmse_yave = np.sqrt(var_se.weighted(weights).mean(ydim))
+        rms = float(np.sqrt(var_se.weighted(weights).mean((ydim, xdim))))
+
+        # Generate y nominal coordinates
+        if len(diffvar[ordinate].shape) == 2:
+            nominal_y = diffvar[ordinate].mean(xdim)
+        else:
+            nominal_y = diffvar[ordinate]
+
+        # Generate x nominal coordinates
+        if len(diffvar[ordinate].shape) == 2:
+            nominal_x = diffvar[abscissa].mean(ydim)
+        else:
+            nominal_x = diffvar[abscissa]
+
+        # Plot the zonal mean RMS difference
+        if projection is None:
+            ax4.plot(var_rmse_xave, nominal_y, color="k")
+            ax4.set_ylim(nominal_y.min(), nominal_y.max())
+            ax4.text(
+                0.5, 1.01, "RMSE", ha="center", fontsize=8, transform=ax4.transAxes
+            )
+            if plot_type == "yz":
+                if splitscale is not None:
+                    ax4.set_yscale("splitscale", zval=splitscale)
+                    ax4.axhline(
+                        y=splitscale[1],
+                        color="black",
+                        linewidth=0.5,
+                        linestyle="dashed",
+                    )
+                else:
+                    ax4.invert_yaxis()
+            ax4.set_yticks([])
+        else:
+            ax4.axis("off")
+
+        # Plot the meridional mean RMS difference
+        if projection is None:
+            ax5.plot(nominal_x, var_rmse_yave, color="k")
+            ax5.set_xlim(nominal_x.min(), nominal_x.max())
+            ax5.set_xticks([])
+            ax5.yaxis.set_label_position("right")
+            ax5.yaxis.tick_right()
+        else:
+            ax5.axis("off")
+
+        add_stats_box(ax8, 0.0, 0.5, "Dataset A", float(var1.min()), float(var1.max()))
+
+        add_stats_box(ax8, 0.15, 0.5, "Dataset B", float(var2.min()), float(var2.max()))
+
+        add_stats_box(
+            ax8,
+            0.6,
+            0.5,
+            "Difference",
+            float(diffvar.min()),
+            float(diffvar.max()),
+            float(diffvar.weighted(weights).mean((ydim, xdim))),
+            rms,
+            ha="left",
+        )
+
+    else:
+        ax4.axis("off")
+        ax5.axis("off")
 
     return fig
