@@ -10,10 +10,12 @@ __all__ = [
     "read_netcdf_from_tar",
     "reset_nominal_coords",
     "standard_grid_area",
+    "x_average_dataset",
     "verify_dim_lens",
 ]
 
 import warnings
+import cmip_basins
 
 import os.path
 import tarfile
@@ -390,6 +392,112 @@ def standard_grid_area(lat_b, lon_b, rad_earth=6371.0e3):
     area = (np.pi / 180.0) * (rad_earth**2) * dy2d * dx2d
 
     return area
+
+
+def x_average_dataset(dset, region=None, lon_0=None):
+    """Function to average a dataset along the x-dimension
+
+    This function performs a zonal mean on an xarray-dataset
+
+    Parameters
+    ----------
+    dset : xarray.Dataset
+        Input dataset
+    region : str, optional
+        Basin/region to subset. Options are "atlarc" and "indpac",
+        by default None (global)
+    lon_0 : float, optional
+        Slice along a specific meridian, by default None
+
+    Returns
+    -------
+    xarray.Dataset
+    """
+
+    xcoords = dset.cf.coordinates["longitude"]
+    xdims = [dset[x].dims[-1] for x in xcoords]
+
+    ycoords = dset.cf.coordinates["latitude"]
+
+    ydims = []
+    for ycoord in ycoords:
+        ydim = list(dset[ycoord].dims)
+
+        if len(ydim) > 1:
+            ydim = ydim[-2]
+            multidim = True
+        else:
+            ydim = ydim[-1]
+            multidim = False
+
+        ydims.append(ydim)
+
+    z_i = dset["z_i"] if "z_i" in dset.keys() else None
+
+    if region is not None:
+        result = xr.Dataset()
+        basin = {}
+
+        varlist = list(dset.keys()) + ycoords if multidim else list(dset.keys())
+
+        for var in varlist:
+            xcoord = dset[var].cf.coordinates["longitude"][0]
+            xdim = list(dset[xcoord].dims)[-1]
+
+            ycoord = dset[var].cf.coordinates["latitude"][0]
+            ydim = list(dset[ycoord].dims)
+            ydim = ydim[-2] if len(ydim) > 1 else ydim[-1]
+
+            if xcoord == "geolon_u":
+                wet = "wet_u"
+            elif xcoord == "geolon_v":
+                wet = "wet_v"
+            elif xcoord == "geolon_c":
+                wet = "wet_c"
+            else:
+                wet = "wet"
+
+            dimset = (ydim, xdim)
+            if dimset not in basin.keys():
+                _dset = xr.Dataset()
+                _dset[var] = dset[var]
+                _codes = cmip_basins.generate_basin_codes(_dset, xcoord, ycoord, wet)
+                regions = {
+                    "atlarc": xr.where(
+                        (_codes == 2) | (_codes == 4), 1.0, np.nan, keep_attrs=True
+                    ),
+                    "indpac": xr.where(
+                        (_codes == 3) | (_codes == 5), 1.0, np.nan, keep_attrs=True
+                    ),
+                }
+                basin[dimset] = regions
+            else:
+                regions = basin[dimset]
+
+            result[var] = (dset[var] * regions[region]).mean(xdim)
+            result[var].attrs = dset[var].attrs
+
+        result = result.set_coords(ycoords)
+
+    elif lon_0 is not None:
+        dset = dset.reset_coords(ycoords)
+        dset = dset.sel({x: lon_0 for x in xdims}, method="nearest")
+        result = dset.set_coords(ycoords)
+
+    else:
+        if multidim:
+            dset = dset.reset_coords(ycoords)
+            dset = dset.mean(xdims, keep_attrs=True)
+            result = dset.set_coords(ycoords)
+        else:
+            result = dset.mean(xdims, keep_attrs=True)
+
+    mappings = {result[x].dims[0]: x for x in ycoords}
+
+    result["z_i"] = z_i
+    result.set_coords("z_i")
+
+    return result
 
 
 def verify_dim_lens(var1, var2, verbose=True):
