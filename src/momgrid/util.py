@@ -15,6 +15,7 @@ __all__ = [
 ]
 
 import warnings
+import cmip_basins
 
 import os.path
 import tarfile
@@ -471,7 +472,6 @@ def x_average_dataset(dset, region=None, lon_0=None):
                 }
                 basin[dimset] = regions
             else:
-                print("Cached", dimset)
                 regions = basin[dimset]
 
             result[var] = (dset[var] * regions[region]).mean(xdim)
