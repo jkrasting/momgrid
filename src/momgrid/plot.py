@@ -217,6 +217,8 @@ def compare_2d(
     plot_type=None,
     splitscale=None,
     projection=None,
+    singlepanel=False,
+    dpi=300,
 ):
     """Compare two datasets on a set of matplotlib subplots.
 
@@ -251,6 +253,7 @@ def compare_2d(
         Calculate bias and RMS difference, by default True
     splitscale : float, optional
     projection :
+    dpi
 
     Returns
     -------
@@ -264,7 +267,7 @@ def compare_2d(
     # in order to emphasize the difference between the two variables
 
     # Set the overall figure size, maintain a 16:9 aspect ratio, and set dpi
-    fig = plt.figure(figsize=(16, 9), dpi=300, facecolor="white")
+    fig = plt.figure(figsize=(16, 9), dpi=dpi, facecolor="white")
 
     # Create a grid layout.
     grid = plt.GridSpec(16, 16, figure=fig)
@@ -274,21 +277,30 @@ def compare_2d(
     facecolor = "gray"
 
     # Define the subplot axes
-    ax0 = fig.add_subplot(grid[0, :])  # Header
-    ax1 = fig.add_subplot(
-        grid[1:8, :6], facecolor=facecolor, projection=projection
-    )  # Left Top
-    ax2 = fig.add_subplot(
-        grid[8:15, :6], facecolor=facecolor, projection=projection
-    )  # Left Bottom
-    ax3 = fig.add_subplot(
-        grid[1:12, 6:15], facecolor=facecolor, projection=projection
-    )  # Right
-    ax4 = fig.add_subplot(grid[1:12, 15:16])  # Zonal Means
-    ax5 = fig.add_subplot(grid[12:13, 6:15])  # Meridional Means
-    ax6 = fig.add_subplot(grid[15:16, :6])  # Left Colorbar
-    ax7 = fig.add_subplot(grid[13:14, 6:15])  # Right Colorbar
-    ax8 = fig.add_subplot(grid[14:16, 6:])  # Info panel
+    if singlepanel:
+        ax0 = fig.add_subplot(grid[0, :])  # Header
+        ax3 = fig.add_subplot(
+            grid[1:12, 1:16], facecolor=facecolor, projection=projection
+        )  # Right
+        ax7 = fig.add_subplot(grid[13:14, :])  # Right Colorbar
+        ax8 = fig.add_subplot(grid[14:16, :])  # Info panel
+
+    else:
+        ax0 = fig.add_subplot(grid[0, :])  # Header
+        ax1 = fig.add_subplot(
+            grid[1:8, :6], facecolor=facecolor, projection=projection
+        )  # Left Top
+        ax2 = fig.add_subplot(
+            grid[8:15, :6], facecolor=facecolor, projection=projection
+        )  # Left Bottom
+        ax3 = fig.add_subplot(
+            grid[1:12, 6:15], facecolor=facecolor, projection=projection
+        )  # Right
+        ax4 = fig.add_subplot(grid[1:12, 15:16])  # Zonal Means
+        ax5 = fig.add_subplot(grid[12:13, 6:15])  # Meridional Means
+        ax6 = fig.add_subplot(grid[15:16, :6])  # Left Colorbar
+        ax7 = fig.add_subplot(grid[13:14, 6:15])  # Right Colorbar
+        ax8 = fig.add_subplot(grid[14:16, 6:])  # Info panel
 
     if projection is not None:
         import cartopy.crs as ccrs
@@ -364,65 +376,66 @@ def compare_2d(
     else:
         geosliced = False
 
-    # Figure out the colorbar range based on data from both variables
-    if clim is None:
-        _ = np.concatenate((var1, var2))
-        clim = (np.nanpercentile(_, 2), np.nanpercentile(_, 98))
-    cmap, norm = generate_cmap_and_norm(*clim, levels, cmap_name=cmap1)
+    if not singlepanel:
+        # Figure out the colorbar range based on data from both variables
+        if clim is None:
+            _ = np.concatenate((var1, var2))
+            clim = (np.nanpercentile(_, 2), np.nanpercentile(_, 98))
+        cmap, norm = generate_cmap_and_norm(*clim, levels, cmap_name=cmap1)
 
-    # Top left panel - Dataset "A"
-    if projection is not None:
-        cb1 = ax1.pcolormesh(
-            var1[abscissa],
-            var2[ordinate],
-            var1.values,
-            cmap=cmap,
-            norm=norm,
-            transform=projection,
-        )
-        ax1.coastlines(linewidth=0.5)
+        # Top left panel - Dataset "A"
+        if projection is not None:
+            cb1 = ax1.pcolormesh(
+                var1[abscissa],
+                var2[ordinate],
+                var1.values,
+                cmap=cmap,
+                norm=norm,
+                transform=projection,
+            )
+            ax1.coastlines(linewidth=0.5)
 
-    else:
-        cb1 = ax1.pcolormesh(
-            var1[abscissa], var2[ordinate], var1.values, cmap=cmap, norm=norm
-        )
+        else:
+            cb1 = ax1.pcolormesh(
+                var1[abscissa], var2[ordinate], var1.values, cmap=cmap, norm=norm
+            )
 
-    ax1.text(
-        0.05,
-        0.05,
-        f"A.{label1}",
-        transform=ax1.transAxes,
-        fontsize=8,
-        ha="left",
-        bbox=props,
-    )
-
-    # Bottom left panel - Dataset "B"
-    if projection is not None:
-        cb2 = ax2.pcolormesh(
-            var2[abscissa],
-            var2[ordinate],
-            var2.values,
-            cmap=cmap,
-            norm=norm,
-            transform=projection,
-        )
-        ax2.coastlines(linewidth=0.5)
-
-    else:
-        cb2 = ax2.pcolormesh(
-            var2[abscissa], var2[ordinate], var2.values, cmap=cmap, norm=norm
+        ax1.text(
+            0.05,
+            0.05,
+            f"A.{label1}",
+            transform=ax1.transAxes,
+            fontsize=8,
+            ha="left",
+            bbox=props,
         )
 
-    ax2.text(
-        0.05,
-        0.05,
-        f"B.{label2}",
-        transform=ax2.transAxes,
-        fontsize=8,
-        ha="left",
-        bbox=props,
-    )
+        # Bottom left panel - Dataset "B"
+        if projection is not None:
+            cb2 = ax2.pcolormesh(
+                var2[abscissa],
+                var2[ordinate],
+                var2.values,
+                cmap=cmap,
+                norm=norm,
+                transform=projection,
+            )
+            ax2.coastlines(linewidth=0.5)
+
+        else:
+            cb2 = ax2.pcolormesh(
+                var2[abscissa], var2[ordinate], var2.values, cmap=cmap, norm=norm
+            )
+
+        ax2.text(
+            0.05,
+            0.05,
+            f"B.{label2}",
+            transform=ax2.transAxes,
+            fontsize=8,
+            ha="left",
+            bbox=props,
+        )
 
     # Calculate a difference field
     diffvar = var1 - var2
@@ -482,11 +495,14 @@ def compare_2d(
     )
 
     # Add the colorbars to the plot
-    fig.colorbar(cb1, cax=ax6, orientation="horizontal", extend="both", label=units)
+    if not singlepanel:
+        fig.colorbar(cb1, cax=ax6, orientation="horizontal", extend="both", label=units)
     fig.colorbar(cb3, cax=ax7, orientation="horizontal", extend="both", label=units)
 
+    axes = [ax3] if singlepanel else [ax1, ax2, ax3]
+
     if plot_type == "yz":
-        for ax in [ax1, ax2, ax3]:
+        for ax in axes:
             if splitscale is not None:
                 ax.set_yscale("splitscale", zval=splitscale)
                 ax.axhline(
@@ -499,7 +515,7 @@ def compare_2d(
 
     else:
         # Remove ticks and labels
-        for ax in [ax1, ax2, ax3]:
+        for ax in axes:
             ax.set_xticks([])
             ax.set_yticks([])
 
@@ -559,36 +575,37 @@ def compare_2d(
             nominal_x = diffvar[abscissa]
 
         # Plot the zonal mean RMS difference
-        if projection is None:
-            ax4.plot(var_rmse_xave, nominal_y, color="k")
-            ax4.set_ylim(nominal_y.min(), nominal_y.max())
-            ax4.text(
-                0.5, 1.01, "RMSE", ha="center", fontsize=8, transform=ax4.transAxes
-            )
-            if plot_type == "yz":
-                if splitscale is not None:
-                    ax4.set_yscale("splitscale", zval=splitscale)
-                    ax4.axhline(
-                        y=splitscale[1],
-                        color="black",
-                        linewidth=0.5,
-                        linestyle="dashed",
-                    )
-                else:
-                    ax4.invert_yaxis()
-            ax4.set_yticks([])
-        else:
-            ax4.axis("off")
+        if not singlepanel:
+            if projection is None:
+                ax4.plot(var_rmse_xave, nominal_y, color="k")
+                ax4.set_ylim(nominal_y.min(), nominal_y.max())
+                ax4.text(
+                    0.5, 1.01, "RMSE", ha="center", fontsize=8, transform=ax4.transAxes
+                )
+                if plot_type == "yz":
+                    if splitscale is not None:
+                        ax4.set_yscale("splitscale", zval=splitscale)
+                        ax4.axhline(
+                            y=splitscale[1],
+                            color="black",
+                            linewidth=0.5,
+                            linestyle="dashed",
+                        )
+                    else:
+                        ax4.invert_yaxis()
+                ax4.set_yticks([])
+            else:
+                ax4.axis("off")
 
-        # Plot the meridional mean RMS difference
-        if projection is None:
-            ax5.plot(nominal_x, var_rmse_yave, color="k")
-            ax5.set_xlim(nominal_x.min(), nominal_x.max())
-            ax5.set_xticks([])
-            ax5.yaxis.set_label_position("right")
-            ax5.yaxis.tick_right()
-        else:
-            ax5.axis("off")
+            # Plot the meridional mean RMS difference
+            if projection is None:
+                ax5.plot(nominal_x, var_rmse_yave, color="k")
+                ax5.set_xlim(nominal_x.min(), nominal_x.max())
+                ax5.set_xticks([])
+                ax5.yaxis.set_label_position("right")
+                ax5.yaxis.tick_right()
+            else:
+                ax5.axis("off")
 
         add_stats_box(ax8, 0.0, 0.5, "Dataset A", float(var1.min()), float(var1.max()))
 
@@ -607,7 +624,8 @@ def compare_2d(
         )
 
     else:
-        ax4.axis("off")
-        ax5.axis("off")
+        if not singlepanel:
+            ax4.axis("off")
+            ax5.axis("off")
 
     return fig
