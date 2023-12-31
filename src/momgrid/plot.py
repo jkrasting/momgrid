@@ -6,10 +6,18 @@ import VerticalSplitScale
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
+from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk
+
 
 from momgrid.geoslice import geoslice
 
-__all__ = ["add_stats_box", "generate_cmap_and_norm", "round_step", "compare_2d"]
+__all__ = [
+    "add_stats_box",
+    "generate_cmap_and_norm",
+    "round_step",
+    "update_stats",
+    "compare_2d",
+]
 
 
 def add_stats_box(
@@ -201,6 +209,237 @@ def generate_cmap_and_norm(
     return cmap, norm
 
 
+def update_stats(
+    var1,
+    var2,
+    diffvar,
+    weights,
+    ydim,
+    xdim,
+    ordinate,
+    abscissa,
+    singlepanel,
+    plot_type,
+    projection,
+    splitscale,
+    ax4=None,
+    ax5=None,
+    ax8=None,
+):
+    """
+    Function update statistics, calculate RMS, and plot zonal/meridonal
+    RMS panels
+
+    Parameters
+    ----------
+    var1 : xarray.DataArray
+        Input data variable (A)
+    var2 : xarray.DataArray
+        Input data variable (B)
+    diffvar : xarray.DataArray
+        Difference array (A minus B)
+    weights : xarray.DataArray
+        Weights array to use for area averaging
+    ydim : str
+        Name of y-dimension (image-relative, not geocentric)
+    xdim : str
+        Name of x-dimension (image-relative, not geocentric)
+    ordinate : str
+        Name of y-coordinate (image-relative, not geocentric)
+    abscissa : str
+        Name of x-coordinate (image-relative, not geocentric)
+    singlepanel : bool
+        Difference plot only if True, otherwise three-panel format
+    plot_type : str
+        Either "yx" or "yz"
+    projection : None or cartopy.crs.Projection
+        Map projection
+    splitscale : float
+        Split vertical scale (yz plots only)
+    ax4 : matplotlib.axes.Axes, optional
+        RHS RMS plot
+    ax5 : matplotlib.axes.Axes, optional
+        Bottom RMS plot
+    ax8 : matplotlib.axes.Axes, optional
+        Stats area axis
+    """
+    # Calculate RMSE
+    var_se = diffvar**2
+    var_rmse_xave = np.sqrt(var_se.weighted(weights).mean(xdim))
+    var_rmse_yave = np.sqrt(var_se.weighted(weights).mean(ydim))
+    rms = float(np.sqrt(var_se.weighted(weights).mean((ydim, xdim))))
+
+    # Plot RMS "wings" only in three-panel mode
+    if not singlepanel:
+        if ax4 is not None:
+            # Generate y nominal coordinates
+            if len(diffvar[ordinate].shape) == 2:
+                nominal_y = diffvar[ordinate].mean(xdim)
+            else:
+                nominal_y = diffvar[ordinate]
+
+            # Plot the zonal (yx) or depth (yz) mean RMS difference
+            if projection is None:
+                ax4.plot(var_rmse_xave, nominal_y, color="k")
+                ax4.set_ylim(nominal_y.min(), nominal_y.max())
+                ax4.text(
+                    0.5,
+                    1.01,
+                    "RMSE",
+                    ha="center",
+                    fontsize=8,
+                    transform=ax4.transAxes,
+                )
+                if plot_type == "yz":
+                    if splitscale is not None:
+                        ax4.set_yscale("splitscale", zval=splitscale)
+                        ax4.axhline(
+                            y=splitscale[1],
+                            color="black",
+                            linewidth=0.5,
+                            linestyle="dashed",
+                        )
+                    else:
+                        ax4.invert_yaxis()
+                ax4.set_yticks([])
+            else:
+                ax4.axis("off")
+
+        # Plot the meridional (yx) or zonal (yz) mean RMS difference
+        if ax5 is not None:
+            # Generate x nominal coordinates
+            if len(diffvar[ordinate].shape) == 2:
+                nominal_x = diffvar[abscissa].mean(ydim)
+            else:
+                nominal_x = diffvar[abscissa]
+
+            # Plot the meridional mean RMS difference
+            if projection is None:
+                ax5.plot(nominal_x, var_rmse_yave, color="k")
+                ax5.set_xlim(nominal_x.min(), nominal_x.max())
+                ax5.set_xticks([])
+                ax5.yaxis.set_label_position("right")
+                ax5.yaxis.tick_right()
+            else:
+                ax5.axis("off")
+
+    # Add A & B stats boxes if in three panel mode
+    if not singlepanel:
+        add_stats_box(ax8, 0.0, 0.5, "Dataset A", float(var1.min()), float(var1.max()))
+        add_stats_box(ax8, 0.15, 0.5, "Dataset B", float(var2.min()), float(var2.max()))
+
+    # Add difference plot stats box
+    add_stats_box(
+        ax8,
+        0.6,
+        0.5,
+        "Difference",
+        float(diffvar.min()),
+        float(diffvar.max()),
+        float(diffvar.weighted(weights).mean((ydim, xdim))),
+        rms,
+        ha="left",
+    )
+
+
+def create_event_handler(
+    ax,
+    var1,
+    var2,
+    diffvar,
+    weights,
+    ydim,
+    xdim,
+    ordinate,
+    abscissa,
+    singlepanel,
+    plot_type,
+    projection,
+    splitscale,
+    ax4=None,
+    ax5=None,
+    ax8=None,
+    event="zoom",
+):
+    def on_zoom(event):
+        if event.inaxes == ax:  # Check if the event was on the correct axes
+            xlim = ax.get_xlim()
+            ylim = ax.get_ylim()
+
+            var1_sub = geoslice(var1, x=xlim, y=ylim)
+            var2_sub = geoslice(var2, x=xlim, y=ylim)
+            diffvar_sub = geoslice(diffvar, x=xlim, y=ylim)
+            weights_sub = geoslice(weights, x=xlim, y=ylim)
+
+            # Update the title or perform other actions based on the zoom
+            # ax.set_title(f"Zoomed Range: x={xlim}, y={ylim}")
+
+            # Clear ax8 and add new statistical information
+            _ = ax8.clear()
+            _ = ax8.axis("off")
+            update_stats(
+                var1_sub,
+                var2_sub,
+                diffvar_sub,
+                weights_sub,
+                ydim,
+                xdim,
+                ordinate,
+                abscissa,
+                singlepanel,
+                plot_type,
+                projection,
+                splitscale,
+                ax4=ax4,
+                ax5=ax5,
+                ax8=ax8,
+            )
+
+            plt.draw()
+
+    def on_draw(event):
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+
+        var1_sub = geoslice(var1, x=xlim, y=ylim)
+        var2_sub = geoslice(var2, x=xlim, y=ylim)
+        diffvar_sub = geoslice(diffvar, x=xlim, y=ylim)
+        weights_sub = geoslice(weights, x=xlim, y=ylim)
+
+        # Update the title or perform other actions based on the zoom
+        # ax.set_title(f"Zoomed Range: x={xlim}, y={ylim}")
+
+        # Clear ax8 and add new statistical information
+        _ = ax8.clear()
+        _ = ax8.axis("off")
+
+        if projection is None:
+            update_stats(
+                var1_sub,
+                var2_sub,
+                diffvar_sub,
+                weights_sub,
+                ydim,
+                xdim,
+                ordinate,
+                abscissa,
+                singlepanel,
+                plot_type,
+                projection,
+                splitscale,
+                ax4=None,
+                ax5=None,
+                ax8=ax8,
+            )
+
+        plt.draw()
+
+    if event == "zoom":
+        return on_zoom
+    if event == "draw":
+        return on_draw
+
+
 def compare_2d(
     var1,
     var2,
@@ -218,7 +457,7 @@ def compare_2d(
     splitscale=None,
     projection=None,
     singlepanel=False,
-    dpi=300,
+    dpi=150,
 ):
     """Compare two datasets on a set of matplotlib subplots.
 
@@ -251,20 +490,20 @@ def compare_2d(
         Colormap for the difference plot.
     stats : bool, optional
         Calculate bias and RMS difference, by default True
+    plot_type : str, optional
+        Either "yx" or "yz", value inferred if missing
     splitscale : float, optional
-    projection :
-    dpi
+        Depth value for vertical split scale, by default None
+    projection : cartopy.crs.Projection, optional
+        Cartopy projection, by default None
+    dpi : float
+        Dots per inch (dpi) value to use for image
 
     Returns
     -------
     matplotlib.figure.Figure
         The matplotlib figure object with the plots.
     """
-
-    # The structure of the three-panel plot
-    # The left side has plots of the two input variables that are stacked
-    # vertically. The right side has a difference plot that is larger
-    # in order to emphasize the difference between the two variables
 
     # Set the overall figure size, maintain a 16:9 aspect ratio, and set dpi
     fig = plt.figure(figsize=(16, 9), dpi=dpi, facecolor="white")
@@ -278,14 +517,22 @@ def compare_2d(
 
     # Define the subplot axes
     if singlepanel:
+        # Used for a single-panel difference plot
         ax0 = fig.add_subplot(grid[0, :])  # Header
         ax3 = fig.add_subplot(
             grid[1:12, 1:16], facecolor=facecolor, projection=projection
         )  # Right
+        ax4 = None
+        ax5 = None
         ax7 = fig.add_subplot(grid[13:14, :])  # Right Colorbar
         ax8 = fig.add_subplot(grid[14:16, :])  # Info panel
 
     else:
+        # The structure of the three-panel plot:
+        #   The left side has plots of the two input variables that are stacked
+        #   vertically. The right side has a difference plot that is larger
+        #   in order to emphasize the difference between the two variables
+
         ax0 = fig.add_subplot(grid[0, :])  # Header
         ax1 = fig.add_subplot(
             grid[1:8, :6], facecolor=facecolor, projection=projection
@@ -302,6 +549,8 @@ def compare_2d(
         ax7 = fig.add_subplot(grid[13:14, 6:15])  # Right Colorbar
         ax8 = fig.add_subplot(grid[14:16, 6:])  # Info panel
 
+    # Now that the projections are initialized, set the supplied cartopy
+    # projection to PlateCarree to maximize plotting compatibility
     if projection is not None:
         import cartopy.crs as ccrs
 
@@ -321,18 +570,28 @@ def compare_2d(
         else:
             raise ValueError("Unable to determine if this yx or yz plot")
 
+    # The `_var` object is used below to infer coordinates. The `var1`
+    # and `var2` objects have already been checked that they are identical
+    # at this point
+
     _var = var1
 
+    # The plots are 2-dimensional. Determine the coordinate variable names
+    # that should be used for plotting
     if plot_type == "yx":
         abscissa = _var.cf.coordinates["longitude"][0]
         ordinate = _var.cf.coordinates["latitude"][0]
+
     elif plot_type == "yz":
         abscissa = _var.cf.coordinates["latitude"][0]
         ordinate = _var.cf.coordinates["vertical"][0]
 
+    # Determine the plot-relative (not grid-relative) x and y dimension names
     ydim = _var.dims[-2]
     xdim = _var.dims[-1]
 
+    # If a yz-plot is requested, determine the bottom level to use if setting
+    # a "splitscale" level
     if plot_type == "yz":
         if splitscale is not None:
             zbot = float(min(_var[ydim].max(), 6500))
@@ -343,7 +602,7 @@ def compare_2d(
     long_name = var1.long_name if "long_name" in var1.attrs.keys() else ""
     units = var1.units if "units" in var1.attrs.keys() else ""
 
-    # Add annotations for the metadata
+    # Add annotations at the top of the figure for the variable metadata
     _ = ax0.text(
         0.0, 0.8, var_name, weight="bold", fontsize=16, transform=ax0.transAxes
     )
@@ -364,7 +623,9 @@ def compare_2d(
         boxstyle="round,pad=0.3", edgecolor="black", linewidth=1.5, facecolor="white"
     )
 
-    # Drop portions if coordinates are NaNs
+    # Drop portions if coordinates are NaNs. This can happen especially in yz plots
+    # when selecting a domain (e.g. "atlarc")  The masking/averaging can introduce
+    # NaNs in the coordinate variable
     var1 = var1.where(~var1[abscissa].isnull(), drop=True)
     var2 = var2.where(~var2[abscissa].isnull(), drop=True)
 
@@ -377,6 +638,9 @@ def compare_2d(
         geosliced = False
 
     if not singlepanel:
+        # The left-hand upper and lower panels are plotted in three-panel mode;
+        # these panels are turned off if only a difference plot is requested.
+
         # Figure out the colorbar range based on data from both variables
         if clim is None:
             _ = np.concatenate((var1, var2))
@@ -437,10 +701,16 @@ def compare_2d(
             bbox=props,
         )
 
+        # Add the colorbar
+        fig.colorbar(cb1, cax=ax6, orientation="horizontal", extend="both", label=units)
+
+    # Right Panel - Difference plot
     # Calculate a difference field
+    # Determine range and colorbar for difference plot
+    # Then plot the field and add annotations
+
     diffvar = var1 - var2
 
-    # Determine range and colorbar for difference plot
     if clim_diff is None:
         clim_diff = (np.nanpercentile(diffvar, 2), np.nanpercentile(diffvar, 98))
 
@@ -457,9 +727,6 @@ def compare_2d(
         warnings.warn(str(exc))
         cmap = cmap2
         norm = None
-
-    # Right Panel - Difference plot
-    # This panel also includes "wings" for the zonal and meridional RMS diff
 
     if projection is not None:
         cb3 = ax3.pcolormesh(
@@ -494,9 +761,7 @@ def compare_2d(
         bbox=props,
     )
 
-    # Add the colorbars to the plot
-    if not singlepanel:
-        fig.colorbar(cb1, cax=ax6, orientation="horizontal", extend="both", label=units)
+    # Add the colorbar for the difference plot
     fig.colorbar(cb3, cax=ax7, orientation="horizontal", extend="both", label=units)
 
     axes = [ax3] if singlepanel else [ax1, ax2, ax3]
@@ -529,7 +794,6 @@ def compare_2d(
         midpoints = np.append(midpoints, end)
         return np.clip(midpoints, start, end)
 
-    # Turn off stats for yz plot (for now)
     if plot_type == "yz":
         zbounds = infer_bounds(diffvar[ordinate].values, 0, None)
         dz = zbounds[1:] - zbounds[0:-1]
@@ -556,76 +820,54 @@ def compare_2d(
         weights = var1[area]
 
     if stats:
-        # Calculate RMSE
-        var_se = diffvar**2
-        var_rmse_xave = np.sqrt(var_se.weighted(weights).mean(xdim))
-        var_rmse_yave = np.sqrt(var_se.weighted(weights).mean(ydim))
-        rms = float(np.sqrt(var_se.weighted(weights).mean((ydim, xdim))))
-
-        # Generate y nominal coordinates
-        if len(diffvar[ordinate].shape) == 2:
-            nominal_y = diffvar[ordinate].mean(xdim)
-        else:
-            nominal_y = diffvar[ordinate]
-
-        # Generate x nominal coordinates
-        if len(diffvar[ordinate].shape) == 2:
-            nominal_x = diffvar[abscissa].mean(ydim)
-        else:
-            nominal_x = diffvar[abscissa]
-
-        # Plot the zonal mean RMS difference
-        if not singlepanel:
-            if projection is None:
-                ax4.plot(var_rmse_xave, nominal_y, color="k")
-                ax4.set_ylim(nominal_y.min(), nominal_y.max())
-                ax4.text(
-                    0.5, 1.01, "RMSE", ha="center", fontsize=8, transform=ax4.transAxes
-                )
-                if plot_type == "yz":
-                    if splitscale is not None:
-                        ax4.set_yscale("splitscale", zval=splitscale)
-                        ax4.axhline(
-                            y=splitscale[1],
-                            color="black",
-                            linewidth=0.5,
-                            linestyle="dashed",
-                        )
-                    else:
-                        ax4.invert_yaxis()
-                ax4.set_yticks([])
-            else:
-                ax4.axis("off")
-
-            # Plot the meridional mean RMS difference
-            if projection is None:
-                ax5.plot(nominal_x, var_rmse_yave, color="k")
-                ax5.set_xlim(nominal_x.min(), nominal_x.max())
-                ax5.set_xticks([])
-                ax5.yaxis.set_label_position("right")
-                ax5.yaxis.tick_right()
-            else:
-                ax5.axis("off")
-
-        add_stats_box(ax8, 0.0, 0.5, "Dataset A", float(var1.min()), float(var1.max()))
-
-        add_stats_box(ax8, 0.15, 0.5, "Dataset B", float(var2.min()), float(var2.max()))
-
-        add_stats_box(
-            ax8,
-            0.6,
-            0.5,
-            "Difference",
-            float(diffvar.min()),
-            float(diffvar.max()),
-            float(diffvar.weighted(weights).mean((ydim, xdim))),
-            rms,
-            ha="left",
+        update_stats(
+            var1,
+            var2,
+            diffvar,
+            weights,
+            ydim,
+            xdim,
+            ordinate,
+            abscissa,
+            singlepanel,
+            plot_type,
+            projection,
+            splitscale,
+            ax4=ax4,
+            ax5=ax5,
+            ax8=ax8,
         )
 
     else:
         if not singlepanel:
             ax4.axis("off")
             ax5.axis("off")
+
+    if singlepanel and plot_type == "yx":
+        draw_handler = create_event_handler(
+            ax3,
+            var1,
+            var2,
+            diffvar,
+            weights,
+            ydim,
+            xdim,
+            ordinate,
+            abscissa,
+            singlepanel,
+            plot_type,
+            projection,
+            splitscale,
+            ax4=ax4,
+            ax5=ax4,
+            ax8=ax8,
+            event="draw",
+        )
+
+        if projection is not None:
+            fig.canvas.mpl_connect("button_release_event", draw_handler)
+
+        else:
+            fig.canvas.mpl_connect("draw_event", draw_handler)
 
     return fig
