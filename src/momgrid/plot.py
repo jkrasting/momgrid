@@ -2,12 +2,12 @@
 
 import warnings
 import xarray as xr
-import VerticalSplitScale
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
 from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk
 
+from . import VerticalSplitScale
 
 from momgrid.geoslice import geoslice
 
