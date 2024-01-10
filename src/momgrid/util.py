@@ -4,6 +4,7 @@ __all__ = [
     "associate_grid_with_data",
     "extract_level",
     "get_file_type",
+    "infer_bounds",
     "is_hgrid",
     "is_static",
     "is_symmetric",
@@ -200,6 +201,36 @@ def get_file_type(fname):
         result = "unknown"
 
     return result
+
+
+def infer_bounds(centers, start=None, end=None):
+    """Function to infer cell bounds from cell centers
+
+    This function takes a vector of cell centers. Assuming a standard grid,
+    the cell bounds are inferred. Optional caps at the start and end can be
+    applied if specified.
+
+    Paramters
+    ---------
+    centers : np.ndarray
+        Vector of cell centers
+    start : float, optional
+        Starting limit of bounds (e.g. -90.), by default None
+    end : float, optional
+        Starting limit of bounds (e.g. -90.), by default None
+
+    Returns
+    -------
+    numpy.ndarray
+        Vector of cell bounds with a shape of len(centers)+1
+    """
+
+    midpoints = (centers[1:] + centers[:-1]) / 2.0
+    front = centers[0] - np.abs(centers[0] - midpoints[0])
+    end = centers[-1] + np.abs(centers[-1] - midpoints[-1])
+    midpoints = np.insert(midpoints, 0, front)
+    midpoints = np.append(midpoints, end)
+    return np.clip(midpoints, start, end)
 
 
 def is_hgrid(ds):
