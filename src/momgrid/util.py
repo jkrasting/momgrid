@@ -25,6 +25,7 @@ import xarray as xr
 from io import BytesIO
 
 from momgrid.metadata import nominal_coord_metadata
+from momgrid.geoslice import x_slice
 
 
 def associate_grid_with_data(grid, data):
@@ -511,9 +512,13 @@ def x_average_dataset(dset, region=None, lon_0=None):
         result = result.set_coords(ycoords)
 
     elif lon_0 is not None:
-        dset = dset.reset_coords(ycoords)
-        dset = dset.sel({x: lon_0 for x in xdims}, method="nearest")
-        result = dset.set_coords(ycoords)
+        result = xr.Dataset()
+        varlist = list(dset.keys()) + ycoords if multidim else list(dset.keys())
+        for var in varlist:
+            result[var] = x_slice(dset[var], lon_0)
+            result[var].attrs = dset[var].attrs
+
+        result = result.set_coords(ycoords)
 
     else:
         if multidim:

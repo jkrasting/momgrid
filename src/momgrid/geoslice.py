@@ -8,6 +8,7 @@ __all__ = [
     "get_indices_1dlatlon",
     "get_indices",
     "geoslice",
+    "x_slice",
 ]
 
 
@@ -72,3 +73,37 @@ def geoslice(arr, x=(None, None), y=(None, None), ycoord=None, xcoord=None):
     yrng = (np.min(ylist), np.max(ylist))
 
     return arr.isel({ydim: slice(*yrng), xdim: slice(*xrng)})
+
+
+def x_slice(arr, lon_0, xcoord=None, ycoord=None):
+    """Function to slice an array at a specific longitude
+
+    Parameters
+    ----------
+    arr : xarray.core.DataArray
+        Input data array
+    lon_0 : float
+        Longitude to perform slice
+    xcoord : str, optional
+        Name of x-coordinate otherwise it is inferred, by default None
+    ycoord : str, optional
+        Name of y-coordinate otherwise it is inferred, by default None
+
+    Returns
+    -------
+    xarray.core.DataArray
+        Sliced data array
+
+    """
+    if xcoord is None:
+        xcoord = arr.cf.coordinates["longitude"][0]
+    if ycoord is None:
+        ycoord = arr.cf.coordinates["latitude"][0]
+
+    xdim = arr[xcoord].dims[-1]
+
+    j, i = get_indices(arr[ycoord], arr[xcoord], arr[ycoord].mean(), lon_0)
+
+    result = arr.isel({xdim: i})
+
+    return result
