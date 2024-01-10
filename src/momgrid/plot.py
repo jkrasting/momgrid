@@ -459,6 +459,7 @@ def compare_2d(
     projection=None,
     singlepanel=False,
     dpi=150,
+    topright_label="",
 ):
     """Compare two datasets on a set of matplotlib subplots.
 
@@ -499,6 +500,7 @@ def compare_2d(
         Cartopy projection, by default None
     dpi : float
         Dots per inch (dpi) value to use for image
+    topright_label :
 
     Returns
     -------
@@ -760,6 +762,16 @@ def compare_2d(
         fontsize=12,
         ha="left",
         bbox=props,
+    )
+
+    ax3.text(
+        0.98,
+        1.03,
+        topright_label,
+        transform=ax3.transAxes,
+        fontsize=10,
+        style="italic",
+        ha="right",
     )
 
     # Add the colorbar for the difference plot
