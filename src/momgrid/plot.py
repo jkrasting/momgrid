@@ -2,14 +2,15 @@
 
 import warnings
 import xarray as xr
-import VerticalSplitScale
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
 from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk
 
+from . import VerticalSplitScale
 
 from momgrid.geoslice import geoslice
+from momgrid.util import infer_bounds
 
 __all__ = [
     "add_stats_box",
@@ -785,14 +786,6 @@ def compare_2d(
             ax.set_yticks([])
 
         plt.subplots_adjust(wspace=0.7, hspace=0.8)
-
-    def infer_bounds(centers, start=None, end=None):
-        midpoints = (centers[1:] + centers[:-1]) / 2.0
-        front = centers[0] - np.abs(centers[0] - midpoints[0])
-        end = centers[-1] + np.abs(centers[-1] - midpoints[-1])
-        midpoints = np.insert(midpoints, 0, front)
-        midpoints = np.append(midpoints, end)
-        return np.clip(midpoints, start, end)
 
     if plot_type == "yz":
         zbounds = infer_bounds(diffvar[ordinate].values, 0, None)

@@ -540,10 +540,14 @@ class Gridset:
         # However, it might be a good idea to allow run-time calculation
         # as an option in the future for new or unsupported model configs.
 
+        if "MOMGRID_WEIGHTS_DIR" in os.environ.keys():
+            weights_dir = os.environ["MOMGRID_WEIGHTS_DIR"]
+        else:
+            weights_dir = "./grid_weights"
+
         if self.model is not None:
-            dir = "grid_weights"
             try:
-                file = open(f"{dir}/{self.model}.pkl", "rb")
+                file = open(f"{weights_dir}/{self.model}.pkl", "rb")
                 self.grid = pickle.load(file)
                 file.close()
             except Exception as exc:
@@ -644,6 +648,11 @@ class Gridset:
         # Construct full name of the saved regridder weights
         regridder = f"{grid_type}_{symmetric}_{method}_{shape}_{dims_dst}{periodic}"
 
+        if "MOMGRID_WEIGHTS_DIR" in os.environ.keys():
+            weights_dir = os.environ["MOMGRID_WEIGHTS_DIR"]
+        else:
+            weights_dir = "./grid_weights"
+
         # Check if a cached version of the regridder exists. If not, load it
         if not hasattr(self, regridder):
             setattr(
@@ -653,7 +662,7 @@ class Gridset:
                     self.grid.to_xesmf(grid_type=grid_type),
                     grid_dst,
                     method,
-                    weights=f"grid_weights/{regridder}.nc",
+                    weights=f"{weights_dir}/{regridder}.nc",
                 ),
             )
 
