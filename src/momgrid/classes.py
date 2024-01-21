@@ -527,6 +527,13 @@ class Gridset:
             self.model = "nwa12"
             self._periodic = False
 
+        elif any(
+            x in [(2240, 2880), (2240, 2881), (2241, 2880), (2241, 2881)]
+            for x in self.grid
+        ):
+            self.model = "cm4x"
+            self._periodic = True
+
         elif any(x in [(320, 360)] for x in self.grid):
             self.model = "spearmed_nonsym"
             self._periodic = True
