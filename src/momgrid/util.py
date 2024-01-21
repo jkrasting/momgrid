@@ -8,6 +8,7 @@ __all__ = [
     "is_hgrid",
     "is_static",
     "is_symmetric",
+    "load_cached_grid",
     "read_netcdf_from_tar",
     "reset_nominal_coords",
     "standard_grid_area",
@@ -15,6 +16,8 @@ __all__ = [
     "verify_dim_lens",
 ]
 
+import os
+import pickle
 import warnings
 import cmip_basins
 
@@ -314,6 +317,35 @@ def is_symmetric(ds, xh="xh", yh="yh", xq="xq", yq="yq"):
     else:
         warnings.warn("Unable to determine if grid is symmetric - assuming False")
         result = False
+
+    return result
+
+
+def load_cached_grid(gridname):
+    """Load a cached MOMgrid instance by name
+
+    Parameters
+    ----------
+    gridname : str
+        Name of grid
+
+    Returns
+    -------
+    momgrid.MOMgrid
+        Grid instance
+    """
+
+    if "MOMGRID_WEIGHTS_DIR" in os.environ.keys():
+        weights_dir = os.environ["MOMGRID_WEIGHTS_DIR"]
+    else:
+        weights_dir = "./grid_weights"
+
+    try:
+        file = open(f"{weights_dir}/{gridname}.pkl", "rb")
+        result = pickle.load(file)
+        file.close()
+    except Exception as exc:
+        raise ValueError(f"Unable to load grid: {gridname}")
 
     return result
 

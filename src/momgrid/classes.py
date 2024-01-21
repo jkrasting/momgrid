@@ -12,6 +12,7 @@ from momgrid.util import (
     is_hgrid,
     is_static,
     is_symmetric,
+    load_cached_grid,
     read_netcdf_from_tar,
     reset_nominal_coords,
     standard_grid_area,
@@ -25,6 +26,17 @@ import os
 import pickle
 import warnings
 
+KNOWN_GRIDS = [
+    "om4_sym",
+    "esm4_sym",
+    "om4_nonsym",
+    "esm4_nonsym",
+    "om5",
+    "nwa12",
+    "cm4x",
+    "spearmed_nonsym",
+]
+
 
 class MOMgrid:
     def __init__(
@@ -36,6 +48,7 @@ class MOMgrid:
         verbose=False,
         hgrid_dtype="float32",
         max_depth=6500.0,
+        warn=True,
     ):
         """Ocean Model grid object
 
@@ -44,8 +57,7 @@ class MOMgrid:
         source : xarray.Dataset or str, path-like
             Xarray dataset or path to grid source, either an ocean_hgrid.nc
             file or an ocean_static.nc file. Optionally, a known configuration
-            may also be specified. Known configurations are "OM4" and
-            "OM4p5"
+            may also be specified.
         topog : xarray.Dataset or str, path-like, optional
             Xarray dataset or path to ocean topography. If present the wet masks
             corresponding to the grids will be generated, by default None.
@@ -63,6 +75,8 @@ class MOMgrid:
             by default "float32"
         max_depth : float, optional
             by default 6500.
+        warn : bool, optional
+            Issue warnings, by default True
         """
 
         # Define names in static file for future flexibility
@@ -85,46 +99,39 @@ class MOMgrid:
         depth = depth_var
 
         # Load source file
-        # TODO: add support for a gridspec tar bundle
         if isinstance(source, xr.Dataset):
             ds = source
 
         elif isinstance(source, str):
-            abspath = os.path.abspath(source)
-            if os.path.exists(abspath):
-                self.source = abspath
-                ftype = get_file_type(abspath)
-                if ftype == "netcdf":
-                    ds = xr.open_dataset(source)
-                elif ftype == "tar":
-                    ds = read_netcdf_from_tar(abspath, "ocean_hgrid.nc")
-
-                    try:
-                        topog = read_netcdf_from_tar(abspath, "ocean_topog.nc")
-                    except Exception as _:
-                        try:
-                            topog = read_netcdf_from_tar(abspath, "topog.nc")
-                        except Exception as _:
-                            warning.warn(
-                                "Unable to find topog in gridspec bundle. "
-                                + "Not processing wet masks or deptho"
-                            )
-
-                else:
-                    raise ValueError(f"Unknown input file type for {abspath}")
-
-            elif source == "OM4":
-                self.source = "Default OM4 grid"
-                # TODO: implement known grid
-                # ds = xr.open_dataset("path_to_known_OM4_hgrid")
-
-            elif source == "OM4p5":
-                self.source = "Default OM4p5 grid"
-                # TODO: implement known grid
-                # ds = xr.open_dataset("path_to_known_OM4p5_hgrid")
+            if source in KNOWN_GRIDS:
+                ds = load_cached_grid(source).to_xarray()
 
             else:
-                raise ValueError(f"Unknown source: {source}")
+                abspath = os.path.abspath(source)
+                if os.path.exists(abspath):
+                    self.source = abspath
+                    ftype = get_file_type(abspath)
+                    if ftype == "netcdf":
+                        ds = xr.open_dataset(source)
+                    elif ftype == "tar":
+                        ds = read_netcdf_from_tar(abspath, "ocean_hgrid.nc")
+
+                        try:
+                            topog = read_netcdf_from_tar(abspath, "ocean_topog.nc")
+                        except Exception as _:
+                            try:
+                                topog = read_netcdf_from_tar(abspath, "topog.nc")
+                            except Exception as _:
+                                warning.warn(
+                                    "Unable to find topog in gridspec bundle. "
+                                    + "Not processing wet masks or deptho"
+                                )
+
+                    else:
+                        raise ValueError(f"Unknown input file type for {abspath}")
+
+                else:
+                    raise ValueError(f"Unknown source: {source}")
 
         else:
             raise ValueError(
@@ -160,9 +167,10 @@ class MOMgrid:
         # memory mode that was requested
         if self.is_static:
             if is_symmetric(ds) is not symmetric:
-                warnings.warn(
-                    f"Supplied static file inconsistent with requested memory mode. Adjusting ..."
-                )
+                if warn:
+                    warnings.warn(
+                        f"Supplied static file inconsistent with requested memory mode. Adjusting ..."
+                    )
                 self.symmetric = is_symmetric(ds)
             else:
                 self.symmetric = symmetric
@@ -186,13 +194,12 @@ class MOMgrid:
 
         # Fetch tracer cell grid metrics
         if self.is_static:
-            setattr(self, geolon, ds[geolon].values)
-            setattr(self, geolat, ds[geolat].values)
-            setattr(self, areacello, ds[areacello].values)
-            setattr(self, deptho, ds[deptho].values)
-            setattr(self, wet, ds[wet].values)
-            setattr(self, dxt, ds[dxt].values)
-            setattr(self, dyt, ds[dyt].values)
+            for x in [geolon, geolat, areacello, deptho, wet, dxt, dyt]:
+                try:
+                    setattr(self, x, ds[x].values)
+                except Exception as exc:
+                    if warn:
+                        warnings.warn(f"Unable to load {x}")
 
         elif self.is_hgrid:
             setattr(self, geolon, x[1::2, 1::2].astype(hgrid_dtype))
@@ -229,12 +236,19 @@ class MOMgrid:
         # Fetch u-cell grid metrics
         suffix = "_u"
         if self.is_static:
-            setattr(self, geolon + suffix, ds[geolon + suffix].values)
-            setattr(self, geolat + suffix, ds[geolat + suffix].values)
-            setattr(self, areacello + suffix, ds[areacello + "_cu"].values)
-            setattr(self, "dxCu", ds["dxCu"].values)
-            setattr(self, "dyCu", ds["dyCu"].values)
-            setattr(self, wet + suffix, ds[wet + suffix].values)
+            for x in [
+                geolon + suffix,
+                geolat + suffix,
+                areacello + suffix,
+                "dxCu",
+                "dyCu",
+                wet + suffix,
+            ]:
+                try:
+                    setattr(self, x, ds[x].values)
+                except Exception as exc:
+                    if warn:
+                        warnings.warn(f"Unable to load {x}")
 
         elif self.is_hgrid:
             _geolon = x[1::2, ::2]
@@ -275,12 +289,19 @@ class MOMgrid:
         # Fetch v-cell grid metrics
         suffix = "_v"
         if self.is_static:
-            setattr(self, geolon + suffix, ds[geolon + suffix].values)
-            setattr(self, geolat + suffix, ds[geolat + suffix].values)
-            setattr(self, areacello + suffix, ds[areacello + "_cv"].values)
-            setattr(self, "dxCv", ds["dxCv"].values)
-            setattr(self, "dyCv", ds["dyCv"].values)
-            setattr(self, wet + suffix, ds[wet + suffix].values)
+            for x in [
+                geolon + suffix,
+                geolat + suffix,
+                areacello + suffix,
+                "dxCv",
+                "dyCv",
+                wet + suffix,
+            ]:
+                try:
+                    setattr(self, x, ds[x].values)
+                except Exception as exc:
+                    if warn:
+                        warnings.warn(f"Unable to load {x}")
 
         elif self.is_hgrid:
             _geolon = x[::2, 1::2]
@@ -320,11 +341,14 @@ class MOMgrid:
         # Fetch corner cell grid metrics
         suffix = "_c"
         if self.is_static:
-            setattr(self, geolon + suffix, ds[geolon + suffix].values)
-            setattr(self, geolat + suffix, ds[geolat + suffix].values)
-            setattr(self, areacello + suffix, ds[areacello + "_bu"].values)
             # TODO: setattr(self, wet + suffix, ds[wet + suffix].values)
             # note: dx and dy are not defined in ocean_static.nc files
+            for x in [geolon + suffix, geolat + suffix, areacello + suffix]:
+                try:
+                    setattr(self, x, ds[x].values)
+                except Exception as exc:
+                    if warn:
+                        warnings.warn(f"Unable to load {x}")
 
         elif self.is_hgrid:
             _geolon = x[::2, ::2]
@@ -547,18 +571,8 @@ class Gridset:
         # However, it might be a good idea to allow run-time calculation
         # as an option in the future for new or unsupported model configs.
 
-        if "MOMGRID_WEIGHTS_DIR" in os.environ.keys():
-            weights_dir = os.environ["MOMGRID_WEIGHTS_DIR"]
-        else:
-            weights_dir = "./grid_weights"
-
         if self.model is not None:
-            try:
-                file = open(f"{weights_dir}/{self.model}.pkl", "rb")
-                self.grid = pickle.load(file)
-                file.close()
-            except Exception as exc:
-                raise ValueError(f"Unable to load grid: {self.model}")
+            self.grid = load_cached_grid(self.model)
         else:
             raise ValueError("Unable to infer model from input data.")
 
