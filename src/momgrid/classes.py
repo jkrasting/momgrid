@@ -236,6 +236,9 @@ class MOMgrid:
         # Fetch u-cell grid metrics
         suffix = "_u"
         if self.is_static:
+            if "areacello_cu" in ds.keys():
+                ds = ds.rename({"areacello_cu": "areacello_u"})
+
             for x in [
                 geolon + suffix,
                 geolat + suffix,
@@ -289,6 +292,9 @@ class MOMgrid:
         # Fetch v-cell grid metrics
         suffix = "_v"
         if self.is_static:
+            if "areacello_cv" in ds.keys():
+                ds = ds.rename({"areacello_cv": "areacello_v"})
+
             for x in [
                 geolon + suffix,
                 geolat + suffix,
@@ -341,6 +347,9 @@ class MOMgrid:
         # Fetch corner cell grid metrics
         suffix = "_c"
         if self.is_static:
+            if "areacello_bu" in ds.keys():
+                ds = ds.rename({"areacello_bu": "areacello_c"})
+
             # TODO: setattr(self, wet + suffix, ds[wet + suffix].values)
             # note: dx and dy are not defined in ocean_static.nc files
             for x in [geolon + suffix, geolat + suffix, areacello + suffix]:
