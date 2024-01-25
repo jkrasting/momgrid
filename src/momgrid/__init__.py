@@ -18,5 +18,8 @@ from . import plot
 from . import util
 from . import external
 from . import vertical
+from . import comparison
+
 from .classes import MOMgrid
 from .classes import Gridset
+from .comparison import compare
