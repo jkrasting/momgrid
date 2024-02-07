@@ -508,6 +508,8 @@ def compare_2d(
         The matplotlib figure object with the plots.
     """
 
+    warnings.filterwarnings("ignore", message="^.*please supply explicit cell edges to pcolormesh.*$")
+
     # Set the overall figure size, maintain a 16:9 aspect ratio, and set dpi
     fig = plt.figure(figsize=(16, 9), dpi=dpi, facecolor="white")
 
