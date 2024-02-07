@@ -16,7 +16,7 @@ warnings.filterwarnings(
 
 def main(args):
     resolution = 1.0
-    plot_type = "yx"
+    plot_type = args.type
     level = 0.0
     region = None
     tdim = "time"
@@ -105,6 +105,8 @@ if __name__ == "__main__":
         default=None,
         help="Variable name to compare. If omitted, a list of available variables will be offered",
     )
+
+    parser.add_argument("-t", "--type", type=str, default="yx", help="Plot type: yx or yz")
 
     # Parse arguments
     args = parser.parse_args()
