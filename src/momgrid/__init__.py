@@ -19,6 +19,7 @@ from . import util
 from . import external
 from . import vertical
 from . import comparison
+from . import xr_stats
 
 from .classes import MOMgrid
 from .classes import Gridset
