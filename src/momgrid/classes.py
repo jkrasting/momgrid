@@ -486,14 +486,24 @@ class MOMgrid:
 
 
 class Gridset:
-    def __init__(self, dset, ignore=None):
+    def __init__(
+        self, dset, grid=None, force_symmetric=False, return_corners=False, ignore=None
+    ):
         """Combination class of MOM grid object and a model data set
 
         Parameters
         ----------
         dset : xarray.Dataset, str (path-like), or list (paths)
             Model dataset object, path to NetCDF file, or list of files
-        ignore : str or list
+        grid : str, optional
+            Specify a grid name, otherwise grid type is inferred.
+            By default None
+        force_symmetric : bool, optional
+            Forces the grid to be symmetric. This is useful for plotting
+            applications and legacy configurations, by default False
+        return_corners : bool, optional
+            Returns the corner coordinates for the grid, by default False
+        ignore : str or list, optional
             List of variables to ignore when processing the dataset
         """
 
@@ -575,6 +585,13 @@ class Gridset:
             self.model = None
             self._periodic = None
 
+        # Override inferred grid if specified
+        self.model = grid if grid is not None else self.model
+
+        # Force symmetric
+        if force_symmetric:
+            self.model = self.model.replace("nonsym", "sym")
+
         # Load a cached copy of the grid object for the specific model.
         # This cached copy is significantly faster than calculating each time.
         # However, it might be a good idea to allow run-time calculation
@@ -590,6 +607,13 @@ class Gridset:
 
         # Drop singleton dimensions and coordinates
         self.data = self.data.squeeze()
+
+        # Add in corner coordinates (useful for plotting)
+        if return_corners:
+            _grid_ds = self.grid.to_xarray()
+            if "geolon_c" in _grid_ds.keys() and "geolat_c" in _grid_ds.keys():
+                coords_c = _grid_ds[["geolon_c", "geolat_c"]].reset_coords()
+                self.data = self.data.merge(coords_c)
 
         # Re-apply metadata for coordinate variables
         self.coord_attrs = {}
