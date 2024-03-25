@@ -17,8 +17,8 @@ warnings.filterwarnings(
 def main(args):
     resolution = 1.0
     plot_type = args.type
-    level = 0.0
-    region = None
+    level = 0.0 if args.zlev is None else args.zlev
+    region = args.region
     tdim = "time"
     projection = None
     # projection = "Robinson"
@@ -27,7 +27,12 @@ def main(args):
     varlist = args.varname
 
     ds1 = momgrid.Gridset(args.ds1)
-    ds2 = momgrid.Gridset(args.ds2)
+
+    try:
+        ds2 = momgrid.Gridset(args.ds2)
+    except:
+        ds2 = momgrid.Gridset(args.ds2, ignore=['geolat_c', 'geolon_c', 'areacello'])
+
 
     ds1.subset(varlist)
     ds2.subset(varlist)
@@ -60,13 +65,21 @@ def main(args):
 
     projection = ccrs.__dict__[projection]() if projection is not None else None
 
+
+    if plot_type == "yx":
+        topright_label = f"Level = {level}"
+    elif plot_type == "yz":
+        topright_label = f"Region = {args.region}"
+
+
     _ = momgrid.plot.compare_2d(
         ds1[var],
         ds2[var],
         dpi=90,
-        singlepanel=False,
+        singlepanel=args.diff,
         plot_type=plot_type,
         projection=projection,
+        topright_label=topright_label,
     )
 
     plt.show()
@@ -107,6 +120,9 @@ if __name__ == "__main__":
     )
 
     parser.add_argument("-t", "--type", type=str, default="yx", help="Plot type: yx or yz")
+    parser.add_argument("-d", "--diff", action="store_true", help="Difference map only")
+    parser.add_argument("-z", "--zlev", type=float, default=None, help="z-level to plot")
+    parser.add_argument("-r", "--region", type=str, default=None, help="Region / basin to plot")
 
     # Parse arguments
     args = parser.parse_args()
