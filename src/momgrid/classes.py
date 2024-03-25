@@ -448,6 +448,11 @@ class MOMgrid:
 
         return ds
 
+    def to_pickle(self, filename):
+        filehandle = open(filename, "wb")
+        pickle.dump(self, filehandle)
+        filehandle.close()
+
     def to_xesmf(self, grid_type="t", filename=None):
         return static_to_xesmf(self.to_xarray(), grid_type=grid_type, filename=filename)
 
