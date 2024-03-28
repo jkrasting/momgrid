@@ -27,6 +27,7 @@ dependencies = [
     "numpy >=1.21.0",
     "xarray >=0.20.0",
     "xgcm",
+    "xesmf",
     "cmip_basins @ git+https://github.com/jkrasting/cmip_basins@main",
 ]
 
