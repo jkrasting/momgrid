@@ -55,6 +55,10 @@ def associate_grid_with_data(grid, data):
     v_point = ("yq", "xh")
     c_point = ("xq", "yq")
 
+    # Define vertical dimensions
+    z_layer = "z_l"
+    z_interface = "z_i"
+
     # variables broken out in case they need to be updated later
     geolon = "geolon"
     geolat = "geolat"
@@ -88,6 +92,12 @@ def associate_grid_with_data(grid, data):
         raise RuntimeError(
             f"Cannot associate grid to data. Different dims: {exceptions}"
         )
+
+    # Save vertical dimensions to add them later
+    vertical_coords = {}
+    for x in ["z_l", "z_i"]:
+        if x in ds.coords:
+            vertical_coords[x] = ds[x]
 
     processed = {}
 
@@ -140,6 +150,11 @@ def associate_grid_with_data(grid, data):
     res = [xr.Dataset({k: v}) for k, v in processed.items()]
     res = xr.merge(res, compat="override")
     res.attrs = ds.attrs
+
+    if len(vertical_coords) > 0:
+        for x in vertical_coords.keys():
+            res[x] = vertical_coords[x]
+            res = res.set_coords({x:vertical_coords[x]})
 
     if isinstance(data, xr.DataArray):
         res = res[data.name]
