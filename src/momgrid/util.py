@@ -70,6 +70,9 @@ def associate_grid_with_data(grid, data):
     areacello_v = "areacello_v"
     areacello_c = "areacello_c"
 
+    deptho = "deptho"
+    wet = "wet"
+
     ds = data if isinstance(data, xr.Dataset) else xr.Dataset({data.name: data})
 
     # Check that dimensions are identical
@@ -96,6 +99,8 @@ def associate_grid_with_data(grid, data):
                         geolon: grid[geolon],
                         geolat: grid[geolat],
                         areacello: grid[areacello],
+                        deptho: grid[deptho],
+                        wet: grid[wet],
                     }
                 )
 
