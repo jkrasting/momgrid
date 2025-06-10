@@ -1,4 +1,4 @@
-"""classes.py : momgrid object definitions """
+"""classes.py : momgrid object definitions"""
 
 __all__ = ["MOMgrid", "Gridset"]
 
@@ -32,6 +32,8 @@ KNOWN_GRIDS = [
     "om4_nonsym",
     "esm4_nonsym",
     "om5",
+    "om5_16",
+    "om5_16_nonsym",
     "nwa12",
     "cm4x",
     "spearmed_nonsym",
@@ -382,6 +384,25 @@ class MOMgrid:
 
             # TODO: add wet mask for corner cells
 
+    def shape_string(self, grid_type):
+        """Constructs xESMF string for cached grid weights"""
+        if grid_type == "t":
+            shape = self.geolon.shape
+            shape = f"{shape[0]}x{shape[1]}"
+        elif grid_type == "u":
+            shape = self.geolon_u.shape
+            shape = f"{shape[0]}x{shape[1]}"
+        elif grid_type == "v":
+            shape = self.geolon_v.shape
+            shape = f"{shape[0]}x{shape[1]}"
+        elif grid_type == "c":
+            shape = self.geolon_c.shape
+            shape = f"{shape[0]}x{shape[1]}"
+        else:
+            shape = ""
+
+        return shape
+
     def to_xarray(self):
         # Define dimension names for future flexibility
         ycenter = "yh"
@@ -509,7 +530,7 @@ class Gridset:
 
         # Open dataset if an xarray Dataset object is not supplied
         if not isinstance(dset, xr.Dataset):
-            dset = xr.open_mfdataset(dset, use_cftime=True)
+            dset = xr.open_mfdataset(dset, use_cftime=True, decode_timedelta=True)
 
         # Filter variables supplied by the ignore kwarg
         if ignore is not None:
@@ -543,11 +564,22 @@ class Gridset:
             self.model = "esm4_sym"
             self._periodic = True
 
+        elif any(x in [(2264, 2881), (2265, 2880), (2265, 2881)] for x in self.grid):
+            self.model = "om5_16"
+            self._periodic = True
+
         # Note that if a dataset contains ONLY variables in the tracer grid,
         # it would be better to use a symmetric version of the grid since it
         # correctly includes the corner cell data
         elif any(x in [(1080, 1440)] for x in self.grid):
             self.model = "om4_nonsym"
+            self._periodic = True
+
+        # Note that if a dataset contains ONLY variables in the tracer grid,
+        # it would be better to use a symmetric version of the grid since it
+        # correctly includes the corner cell data
+        elif any(x in [(2264, 2880)] for x in self.grid):
+            self.model = "om5_16_nonsym"
             self._periodic = True
 
         # Note that if a dataset contains ONLY variables in the tracer grid,
@@ -654,17 +686,30 @@ class Gridset:
         """Returns False for u and c grids"""
         return False if grid_type in ["u", "c"] else self._periodic
 
-    def regrid_var(self, var, method="bilinear", resolution=1.0):
+    def regrid_var(
+        self,
+        var,
+        target="woa",
+        method="bilinear",
+        resolution=1.0,
+        force_symmetric=False,
+    ):
         """Regrids a variable using xESMF
 
         Parameters
         ----------
         var : str
             Variable name
+        target : str, optional
+            Target grid type, by default "woa"
+            (currently only supports "woa")
         method : str, optional
             xESMF regridding method, by default "bilinear"
         resolution : float
             Target WOA18 grid resolution (1.0 or 0.25), by default 0.25
+        force_symmetric : bool, optional
+            Forces the grid to be symmetric. This is useful for plotting
+            applications and legacy configurations, by default False
 
         Returns
         -------
@@ -678,6 +723,9 @@ class Gridset:
 
         # Determine grid type
         grid_type = self.grid_type(self.data[var].dims)
+        if grid_type == "":
+            warnings.warn(f"Unable to regrid {var} -- unknown grid type.")
+            return self.data[var]
         symmetric = "sym" if self.grid.symmetric else "nosym"
 
         # Determine if grid is periodic
@@ -691,13 +739,28 @@ class Gridset:
 
         # Setup output grid
 
-        if resolution == 1.0:
-            grid_dst = woa18_grid(resolution=1.0)
-            dims_dst = "180x360"
+        if target == "woa":
+            if resolution == 1.0:
+                grid_dst = woa18_grid(resolution=1.0)
+                dims_dst = "180x360"
 
-        elif resolution == 0.25:
-            grid_dst = woa18_grid(resolution=0.25)
-            dims_dst = "720x1440"
+            elif resolution == 0.25:
+                grid_dst = woa18_grid(resolution=0.25)
+                dims_dst = "720x1440"
+        elif isinstance(target, MOMgrid):
+            grid_dst = target.to_xesmf(grid_type=grid_type)
+            dims_dst = target.shape_string(grid_type)
+            # Special checks for conservative regridding
+            if method == "conservative":
+                if grid_type in ["u", "v", "c"]:
+                    warnings.warn(
+                        f"Converting conservative regridding to bilinear for {grid_type} grid."
+                    )
+                    method = "bilinear"
+                    if grid_type in ["v", "c"]:
+                        periodic = "_peri"
+        else:
+            raise ValueError(f"Unknown target grid type: {target}")
 
         # Construct full name of the saved regridder weights
         regridder = f"{grid_type}_{symmetric}_{method}_{shape}_{dims_dst}{periodic}"
@@ -707,18 +770,24 @@ class Gridset:
         else:
             weights_dir = "./grid_weights"
 
+        overrided_grid = False
+        if self.model == "om5_16_nonsym" and grid_type == "t":
+            _original_grid = self.grid
+            self.grid = MOMgrid("om5_16", warn=False)
+            regridder = regridder.replace("nosym", "sym")
+            overrided_grid = True
+
         # Check if a cached version of the regridder exists. If not, load it
         if not hasattr(self, regridder):
-            setattr(
-                self,
-                regridder,
-                xe.Regridder(
-                    self.grid.to_xesmf(grid_type=grid_type),
-                    grid_dst,
-                    method,
-                    weights=f"{weights_dir}/{regridder}.nc",
-                ),
+            _weights_file = f"{weights_dir}/{regridder}.nc"
+            _regridder_obj = xe.Regridder(
+                self.grid.to_xesmf(grid_type=grid_type),
+                grid_dst,
+                method,
+                weights=_weights_file,
+                reuse_weights=True,
             )
+            setattr(self, regridder, _regridder_obj)
 
         # Regrid the variable using the regridder
         _regridder = getattr(self, regridder)
@@ -732,9 +801,14 @@ class Gridset:
                 if len(result.coords[coord].attrs) == 0:
                     result[coord].attrs = self.coord_attrs[coord]
 
+        if overrided_grid is True:
+            self.grid = _original_grid
+
         return result
 
-    def regrid(self, method="bilinear", resolution=1.0):
+    def regrid(
+        self, target="woa", method="bilinear", resolution=1.0, force_symmetric=False
+    ):
         """Loop over all variables and regrid"""
 
         # Create an empty dataset to hold the results
@@ -743,37 +817,42 @@ class Gridset:
         # Loop over variables
         for var in list(self.data.keys()):
             try:
-                dsout[var] = self.regrid_var(var, method=method, resolution=resolution)
-
-            # Warn if regridding failed
+                dsout[var] = self.regrid_var(
+                    var,
+                    target=target,
+                    method=method,
+                    resolution=resolution,
+                    force_symmetric=force_symmetric,
+                )
             except Exception as exc:
                 warnings.warn(str(exc))
                 pass
 
-        # Add back in the mask and the bounds
-        woa_grid = woa18_grid(resolution=resolution)
-        for var in ["lat_b", "lon_b", "mask"]:
-            dsout[var] = woa_grid[var]
-            dsout = dsout.set_coords(var)
+        if target == "woa":
+            # Add back in the mask and the bounds
+            woa_grid = woa18_grid(resolution=resolution)
+            for var in ["lat_b", "lon_b", "mask"]:
+                dsout[var] = woa_grid[var]
+                dsout = dsout.set_coords(var)
 
-        # Calculate the cell area and set attributes
-        dsout["areacello"] = xr.DataArray(
-            standard_grid_area(dsout["lat_b"], dsout["lon_b"]),
-            dims=("lat", "lon"),
-        )
+            # Calculate the cell area and set attributes
+            dsout["areacello"] = xr.DataArray(
+                standard_grid_area(dsout["lat_b"], dsout["lon_b"]),
+                dims=("lat", "lon"),
+            )
 
-        dsout["areacello"].attrs = {
-            "units": "m2",
-            "long_name": "Ocean Grid-Cell Area",
-            "standard_name": "cell_area",
-        }
+            dsout["areacello"].attrs = {
+                "units": "m2",
+                "long_name": "Ocean Grid-Cell Area",
+                "standard_name": "cell_area",
+            }
 
-        # Make cell area a coordinate variable
-        dsout = dsout.set_coords("areacello")
+            # Make cell area a coordinate variable
+            dsout = dsout.set_coords("areacello")
 
-        if "z_l" in dsout.coords:
-            if "z_i" not in dsout.coords and "z_i" in self.data.keys():
-                dsout = dsout.assign_coords({"z_i": self.data["z_i"]})
+            if "z_l" in dsout.coords:
+                if "z_i" not in dsout.coords and "z_i" in self.data.keys():
+                    dsout = dsout.assign_coords({"z_i": self.data["z_i"]})
 
         return dsout
 
