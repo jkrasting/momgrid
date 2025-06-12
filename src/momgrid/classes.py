@@ -829,7 +829,7 @@ class Gridset:
                 pass
 
         if target == "woa":
-            # Add back in the mask and the bounds
+            # Add back in the mask, the bounds, and the depth (if available)
             woa_grid = woa18_grid(resolution=resolution)
             for var in ["lat_b", "lon_b", "mask"]:
                 dsout[var] = woa_grid[var]
@@ -853,6 +853,16 @@ class Gridset:
             if "z_l" in dsout.coords:
                 if "z_i" not in dsout.coords and "z_i" in self.data.keys():
                     dsout = dsout.assign_coords({"z_i": self.data["z_i"]})
+
+            if "deptho" in self.data.coords.keys():
+                deptho_rgd = self.regrid_var("deptho", target=target)
+                dsout["deptho"] = deptho_rgd
+                dsout["deptho"].attrs = {
+                    "units": "m",
+                    "long_name": "Ocean Grid Depth",
+                    "standard_name": "depth",
+                }
+                dsout = dsout.set_coords("deptho")
 
         return dsout
 
