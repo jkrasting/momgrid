@@ -1,10 +1,11 @@
-""" external.py: functions to interface with external packages """
+"""external.py: functions to interface with external packages"""
 
 import warnings
 import xarray as xr
 import xesmf as xe
-import pkg_resources as pkgr
+import importlib_resources
 from momgrid.util import is_symmetric
+
 
 __all__ = ["build_regridder_weights", "static_to_xesmf", "woa18_grid"]
 
@@ -147,7 +148,9 @@ def woa18_grid(resolution=0.25):
             f"Unknown resolution: {resolution}. Must be either 0.25 or 1.0"
         )
 
-    fpath = pkgr.resource_filename("momgrid", f"grids/WOA18_{res_str}deg_horiz_grid.nc")
+    fpath = importlib_resources.files("momgrid.grids").joinpath(
+        f"WOA18_{res_str}deg_horiz_grid.nc"
+    )
 
     dset = xr.open_dataset(fpath)
 
